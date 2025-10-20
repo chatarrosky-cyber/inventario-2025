@@ -94,7 +94,6 @@
                     } catch (error) {
                         console.error('Error Firebase:', error);
                         setConectado(false);
-                        alert('Error al conectar con Firebase. Verifica tu configuración y las reglas de seguridad.');
                     } finally {
                         setCargando(false);
                     }
@@ -126,6 +125,9 @@
             const [nuevoTrabajador, setNuevoTrabajador] = useState('');
             const [nuevaMarca, setNuevaMarca] = useState('');
             const [mostrarExito, setMostrarExito] = useState(false);
+            const [fechaFiltro, setFechaFiltro] = useState(new Date().toISOString().split('T')[0]);
+            const [mostrarModalReset, setMostrarModalReset] = useState(false);
+            const [mostrarModalExcel, setMostrarModalExcel] = useState(false);
 
             if (cargando) {
                 return (
@@ -133,7 +135,6 @@
                         <div className="text-center">
                             <div className="animate-spin rounded-full h-20 w-20 border-b-4 border-blue-600 mx-auto mb-4"></div>
                             <p className="text-2xl font-bold text-gray-700">Conectando con Firebase...</p>
-                            <p className="text-sm text-gray-500 mt-2">Esto puede tomar unos segundos</p>
                         </div>
                     </div>
                 );
@@ -145,14 +146,6 @@
                         <div className="bg-white p-8 rounded-lg shadow-lg max-w-md">
                             <h2 className="text-2xl font-bold text-red-600 mb-4">❌ Error de Conexión</h2>
                             <p className="text-gray-700 mb-4">No se pudo conectar con Firebase.</p>
-                            <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4">
-                                <p className="font-semibold mb-2">Verifica lo siguiente:</p>
-                                <ul className="list-disc list-inside text-sm space-y-1">
-                                    <li>Creaste Firestore Database en Firebase</li>
-                                    <li>Configuraste las reglas en modo de prueba</li>
-                                    <li>Tienes conexión a internet</li>
-                                </ul>
-                            </div>
                             <button onClick={() => window.location.reload()} className="w-full bg-blue-600 text-white py-2 rounded-lg">
                                 Reintentar
                             </button>
@@ -178,6 +171,51 @@
             const mostrarMensajeExito = () => {
                 setMostrarExito(true);
                 setTimeout(() => setMostrarExito(false), 2000);
+            };
+
+            const resetearProduccionDiaria = () => {
+                const nuevosTrabajadores = datos.trabajadores.map(t => ({
+                    ...t,
+                    produccion: {}
+                }));
+                
+                const registroReset = {
+                    fecha: new Date().toISOString(),
+                    tipo: 'reset',
+                    descripcion: 'Reset de producción diaria'
+                };
+
+                actualizarDatos({
+                    ...datos,
+                    trabajadores: nuevosTrabajadores,
+                    ventas: {},
+                    historial: [...(datos.historial || []), registroReset]
+                });
+                
+                setMostrarModalReset(false);
+                mostrarMensajeExito();
+            };
+
+            const exportarAExcel = () => {
+                let csv = 'Fecha,Tipo,Trabajador,Marca,Cantidad\n';
+                
+                (datos.historial || []).forEach(item => {
+                    const fecha = new Date(item.fecha).toLocaleString('es-ES');
+                    const tipo = item.tipo === 'produccion' ? 'Producción' : item.tipo === 'venta' ? 'Venta' : 'Reset';
+                    const trabajador = item.trabajador || '-';
+                    const marca = item.marca || '-';
+                    const cantidad = item.cantidad || '-';
+                    csv += `${fecha},${tipo},${trabajador},${marca},${cantidad}\n`;
+                });
+
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `inventario_${new Date().toISOString().split('T')[0]}.csv`);
+                link.click();
+                
+                mostrarMensajeExito();
             };
 
             const agregarTrabajador = () => {
@@ -255,6 +293,14 @@
                 }
             };
 
+            const filtrarHistorialPorFecha = () => {
+                if (!fechaFiltro) return datos.historial || [];
+                return (datos.historial || []).filter(item => {
+                    const fechaItem = new Date(item.fecha).toISOString().split('T')[0];
+                    return fechaItem === fechaFiltro;
+                });
+            };
+
             const inventarioTotal = calcularInventarioTotal();
             const totalProducido = Object.values(inventarioTotal).reduce((sum, val) => {
                 const venta = datos.ventas[datos.marcas.find(m => inventarioTotal[m] === val)] || 0;
@@ -287,13 +333,13 @@
                                 </div>
                                 {!trabajadorActual ? (
                                     <div>
-                                        <p className="text-gray-600 mb-4 text-lg">Selecciona tu nombre para comenzar:</p>
+                                        <p className="text-gray-600 mb-4 text-lg">Selecciona tu nombre:</p>
                                         <div className="grid gap-3">
                                             {datos.trabajadores.map(t => (
                                                 <button
                                                     key={t.nombre}
                                                     onClick={() => setTrabajadorActual(t.nombre)}
-                                                    className="bg-blue-600 text-white py-4 px-6 rounded-xl font-bold hover:bg-blue-700 transition-all text-lg shadow-lg hover:shadow-xl"
+                                                    className="bg-blue-600 text-white py-4 px-6 rounded-xl font-bold hover:bg-blue-700 transition-all text-lg shadow-lg"
                                                 >
                                                     👤 {t.nombre}
                                                 </button>
@@ -305,7 +351,7 @@
                                         <div className="flex justify-between items-center mb-6 bg-blue-50 p-4 rounded-lg">
                                             <h2 className="text-xl font-bold text-blue-800">👋 Hola, {trabajadorActual}</h2>
                                             <button onClick={() => setTrabajadorActual('')} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">
-                                                Cambiar usuario
+                                                Cambiar
                                             </button>
                                         </div>
                                         <div className="space-y-4">
@@ -314,7 +360,7 @@
                                                 <select 
                                                     value={marcaSeleccionada}
                                                     onChange={(e) => setMarcaSeleccionada(e.target.value)}
-                                                    className="w-full p-4 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:outline-none text-lg font-medium"
+                                                    className="w-full p-4 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:outline-none text-lg"
                                                 >
                                                     <option value="">-- Seleccionar marca --</option>
                                                     {datos.marcas.map(m => (
@@ -323,7 +369,7 @@
                                                 </select>
                                             </div>
                                             <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-2">Cantidad de bolsas producidas</label>
+                                                <label className="block text-sm font-bold text-gray-700 mb-2">Cantidad de bolsas</label>
                                                 <input 
                                                     type="number"
                                                     value={cantidad}
@@ -338,7 +384,7 @@
                                                     setMarcaSeleccionada('');
                                                 }}
                                                 disabled={!marcaSeleccionada || !cantidad}
-                                                className="w-full bg-green-600 text-white py-4 rounded-xl font-bold hover:bg-green-700 transition-all text-lg shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                                className="w-full bg-green-600 text-white py-4 rounded-xl font-bold hover:bg-green-700 transition-all text-lg shadow-lg disabled:bg-gray-400"
                                             >
                                                 ✓ Registrar Producción
                                             </button>
@@ -348,7 +394,7 @@
                                             <div className="space-y-2">
                                                 {Object.entries(datos.trabajadores.find(t => t.nombre === trabajadorActual)?.produccion || {}).map(([marca, cant]) => (
                                                     <div key={marca} className="flex justify-between bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border-l-4 border-blue-500">
-                                                        <span className="font-semibold text-gray-700">{marca}</span>
+                                                        <span className="font-semibold">{marca}</span>
                                                         <span className="font-bold text-blue-700 text-lg">{cant} bolsas</span>
                                                     </div>
                                                 ))}
@@ -359,8 +405,8 @@
                                         </div>
                                     </div>
                                 )}
-                                <button onClick={() => setVista('admin')} className="mt-6 w-full bg-gray-600 text-white py-3 rounded-xl font-bold hover:bg-gray-700 transition-all shadow-lg">
-                                    🏠 Volver al Panel Principal
+                                <button onClick={() => setVista('admin')} className="mt-6 w-full bg-gray-600 text-white py-3 rounded-xl font-bold hover:bg-gray-700 shadow-lg">
+                                    🏠 Volver al Panel
                                 </button>
                             </div>
                         </div>
@@ -375,12 +421,11 @@
                         <div className="max-w-4xl mx-auto">
                             {mostrarExito && (
                                 <div className="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
-                                    ✓ Guardado exitosamente
+                                    ✓ Guardado
                                 </div>
                             )}
                             <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
                                 <h1 className="text-3xl font-bold text-gray-800">⚙️ Configuración</h1>
-                                <p className="text-gray-600 mt-2">Administra trabajadores y marcas</p>
                             </div>
                             <div className="grid md:grid-cols-2 gap-6">
                                 <div className="bg-white rounded-xl shadow-lg p-6">
@@ -391,14 +436,13 @@
                                             value={nuevoTrabajador}
                                             onChange={(e) => setNuevoTrabajador(e.target.value)}
                                             placeholder="Nombre completo"
-                                            className="flex-1 p-3 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
+                                            className="flex-1 p-3 border-2 border-gray-300 rounded-lg"
                                         />
-                                        <button onClick={agregarTrabajador} className="bg-green-600 text-white px-6 rounded-lg font-bold hover:bg-green-700 shadow-lg">
+                                        <button onClick={agregarTrabajador} className="bg-green-600 text-white px-6 rounded-lg font-bold hover:bg-green-700">
                                             + Agregar
                                         </button>
                                     </div>
                                     <div className="space-y-2">
-                                        <p className="text-sm font-semibold text-gray-600 mb-2">Total: {datos.trabajadores.length} trabajadores</p>
                                         {datos.trabajadores.map(t => (
                                             <div key={t.nombre} className="bg-gray-50 p-4 rounded-lg flex justify-between items-center border-l-4 border-green-500">
                                                 <span className="font-semibold">{t.nombre}</span>
@@ -410,34 +454,125 @@
                                     </div>
                                 </div>
                                 <div className="bg-white rounded-xl shadow-lg p-6">
-                                    <h2 className="text-xl font-bold text-gray-800 mb-4">💧 Marcas de Agua</h2>
+                                    <h2 className="text-xl font-bold text-gray-800 mb-4">💧 Marcas</h2>
                                     <div className="flex gap-2 mb-6">
                                         <input 
                                             type="text"
                                             value={nuevaMarca}
                                             onChange={(e) => setNuevaMarca(e.target.value)}
                                             placeholder="Nueva marca"
-                                            className="flex-1 p-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                            className="flex-1 p-3 border-2 border-gray-300 rounded-lg"
                                         />
-                                        <button onClick={agregarMarca} className="bg-blue-600 text-white px-6 rounded-lg font-bold hover:bg-blue-700 shadow-lg">
+                                        <button onClick={agregarMarca} className="bg-blue-600 text-white px-6 rounded-lg font-bold hover:bg-blue-700">
                                             + Agregar
                                         </button>
                                     </div>
-                                    <div>
-                                        <p className="text-sm font-semibold text-gray-600 mb-2">Total: {datos.marcas.length} marcas</p>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {datos.marcas.map(m => (
-                                                <div key={m} className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center font-semibold text-blue-800 border-2 border-blue-200">
-                                                    {m}
-                                                </div>
-                                            ))}
-                                        </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {datos.marcas.map(m => (
+                                            <div key={m} className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center font-semibold text-blue-800 border-2 border-blue-200">
+                                                {m}
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
-                            <button onClick={() => setVista('admin')} className="mt-6 w-full bg-gray-600 text-white py-3 rounded-xl font-bold hover:bg-gray-700 shadow-lg">
-                                🏠 Volver al Panel Principal
+                            <button onClick={() => setVista('admin')} className="mt-6 w-full bg-gray-600 text-white py-3 rounded-xl font-bold hover:bg-gray-700">
+                                🏠 Volver
                             </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // VISTA CALENDARIO
+            if (vista === 'calendario') {
+                const historialFiltrado = filtrarHistorialPorFecha();
+                const produccionDelDia = historialFiltrado.filter(h => h.tipo === 'produccion');
+                const ventasDelDia = historialFiltrado.filter(h => h.tipo === 'venta');
+                
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-yellow-100 p-4">
+                        <div className="max-w-6xl mx-auto">
+                            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+                                <h1 className="text-3xl font-bold text-gray-800 mb-4">📅 Historial por Fecha</h1>
+                                <div className="flex flex-col md:flex-row gap-4 items-center">
+                                    <label className="font-semibold text-gray-700">Seleccionar fecha:</label>
+                                    <input 
+                                        type="date"
+                                        value={fechaFiltro}
+                                        onChange={(e) => setFechaFiltro(e.target.value)}
+                                        max={new Date().toISOString().split('T')[0]}
+                                        className="p-3 border-2 border-gray-300 rounded-lg text-lg font-medium"
+                                    />
+                                    <button onClick={() => setVista('admin')} className="md:ml-auto bg-gray-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-gray-700">
+                                        🏠 Volver
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="grid md:grid-cols-2 gap-6 mb-6">
+                                <div className="bg-white rounded-xl shadow-lg p-6">
+                                    <h2 className="text-xl font-bold text-green-700 mb-4">✓ Producción del día</h2>
+                                    {produccionDelDia.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {produccionDelDia.map((item, idx) => (
+                                                <div key={idx} className="bg-green-50 p-4 rounded-lg border-l-4 border-green-500">
+                                                    <p className="font-bold">{item.trabajador} - {item.marca}</p>
+                                                    <p className="text-2xl font-bold text-green-700">{item.cantidad} bolsas</p>
+                                                    <p className="text-sm text-gray-500">{formatearFecha(item.fecha)}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-gray-500 text-center py-8">No hay producción registrada este día</p>
+                                    )}
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-lg p-6">
+                                    <h2 className="text-xl font-bold text-red-700 mb-4">✗ Ventas del día</h2>
+                                    {ventasDelDia.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {ventasDelDia.map((item, idx) => (
+                                                <div key={idx} className="bg-red-50 p-4 rounded-lg border-l-4 border-red-500">
+                                                    <p className="font-bold">{item.marca}</p>
+                                                    <p className="text-2xl font-bold text-red-700">{item.cantidad} bolsas</p>
+                                                    <p className="text-sm text-gray-500">{formatearFecha(item.fecha)}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-gray-500 text-center py-8">No hay ventas registradas este día</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-xl shadow-lg p-6">
+                                <h2 className="text-xl font-bold text-gray-800 mb-4">Resumen del día</h2>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="bg-blue-50 p-4 rounded-lg text-center">
+                                        <p className="text-sm text-gray-600">Total Producido</p>
+                                        <p className="text-3xl font-bold text-blue-700">
+                                            {produccionDelDia.reduce((sum, item) => sum + item.cantidad, 0)}
+                                        </p>
+                                    </div>
+                                    <div className="bg-red-50 p-4 rounded-lg text-center">
+                                        <p className="text-sm text-gray-600">Total Vendido</p>
+                                        <p className="text-3xl font-bold text-red-700">
+                                            {ventasDelDia.reduce((sum, item) => sum + item.cantidad, 0)}
+                                        </p>
+                                    </div>
+                                    <div className="bg-green-50 p-4 rounded-lg text-center">
+                                        <p className="text-sm text-gray-600">Registros</p>
+                                        <p className="text-3xl font-bold text-green-700">{historialFiltrado.length}</p>
+                                    </div>
+                                    <div className="bg-yellow-50 p-4 rounded-lg text-center">
+                                        <p className="text-sm text-gray-600">Trabajadores</p>
+                                        <p className="text-3xl font-bold text-yellow-700">
+                                            {new Set(produccionDelDia.map(p => p.trabajador)).size}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 );
@@ -452,6 +587,68 @@
                                 ✓ Guardado exitosamente
                             </div>
                         )}
+
+                        {/* Modal Reset */}
+                        {mostrarModalReset && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                                <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
+                                    <h2 className="text-2xl font-bold text-red-600 mb-4">⚠️ Confirmar Reset</h2>
+                                    <p className="text-gray-700 mb-6">¿Estás seguro de que quieres borrar toda la producción del día? Esta acción no se puede deshacer.</p>
+                                    <div className="flex gap-4">
+                                        <button 
+                                            onClick={() => setMostrarModalReset(false)}
+                                            className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button 
+                                            onClick={resetearProduccionDiaria}
+                                            className="flex-1 bg-red-600 text-white py-3 rounded-lg font-bold hover:bg-red-700"
+                                        >
+                                            Sí, Borrar Todo
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Modal Excel */}
+                        {mostrarModalExcel && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                                <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl">
+                                    <h2 className="text-2xl font-bold text-green-600 mb-4">📊 Exportar a Excel</h2>
+                                    <p className="text-gray-700 mb-4">Se descargará un archivo CSV con todo el historial de movimientos.</p>
+                                    <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
+                                        <p className="text-sm font-semibold text-blue-800 mb-2">💡 Tip para Google Sheets:</p>
+                                        <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                                            <li>Descarga el archivo CSV</li>
+                                            <li>Ve a Google Sheets (sheets.google.com)</li>
+                                            <li>Archivo → Importar → Subir</li>
+                                            <li>Selecciona el archivo descargado</li>
+                                            <li>¡Listo! Ya tienes tu Excel en la nube</li>
+                                        </ol>
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <button 
+                                            onClick={() => setMostrarModalExcel(false)}
+                                            className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button 
+                                            onClick={() => {
+                                                exportarAExcel();
+                                                setMostrarModalExcel(false);
+                                            }}
+                                            className="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700"
+                                        >
+                                            📥 Descargar CSV
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
                             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                 <div>
@@ -464,11 +661,20 @@
                                     </div>
                                 </div>
                                 <div className="flex flex-wrap gap-3">
-                                    <button onClick={() => setVista('trabajador')} className="bg-green-600 text-white px-5 py-3 rounded-lg font-bold hover:bg-green-700 shadow-lg">
-                                        👥 Modo Trabajador
+                                    <button onClick={() => setVista('calendario')} className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-700 shadow-lg">
+                                        📅 Calendario
                                     </button>
-                                    <button onClick={() => setVista('configuracion')} className="bg-purple-600 text-white px-5 py-3 rounded-lg font-bold hover:bg-purple-700 shadow-lg">
-                                        ⚙️ Configuración
+                                    <button onClick={() => setMostrarModalExcel(true)} className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-700 shadow-lg">
+                                        📊 Excel
+                                    </button>
+                                    <button onClick={() => setMostrarModalReset(true)} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-700 shadow-lg">
+                                        🔄 Reset
+                                    </button>
+                                    <button onClick={() => setVista('trabajador')} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 shadow-lg">
+                                        👥 Trabajador
+                                    </button>
+                                    <button onClick={() => setVista('configuracion')} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-purple-700 shadow-lg">
+                                        ⚙️ Config
                                     </button>
                                 </div>
                             </div>
@@ -565,26 +771,35 @@
 
                         <div className="bg-white rounded-xl shadow-lg p-6">
                             <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                                📅 Historial de Movimientos
+                                📅 Historial de Movimientos Recientes
                                 <span className="text-sm font-normal text-gray-500">
-                                    ({(datos.historial || []).length} registros)
+                                    ({(datos.historial || []).length} registros totales)
                                 </span>
                             </h2>
                             <div className="space-y-2 max-h-96 overflow-y-auto">
-                                {(datos.historial || []).slice().reverse().slice(0, 30).map((item, idx) => (
-                                    <div key={idx} className={`p-4 rounded-lg border-l-4 ${item.tipo === 'produccion' ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'} shadow-sm`}>
+                                {(datos.historial || []).slice().reverse().slice(0, 20).map((item, idx) => (
+                                    <div key={idx} className={`p-4 rounded-lg border-l-4 shadow-sm ${
+                                        item.tipo === 'produccion' ? 'bg-green-50 border-green-500' : 
+                                        item.tipo === 'venta' ? 'bg-red-50 border-red-500' : 
+                                        'bg-yellow-50 border-yellow-500'
+                                    }`}>
                                         <div className="flex justify-between items-start">
                                             <div>
                                                 <p className="font-bold text-sm text-gray-800">
-                                                    {item.tipo === 'produccion' ? '✓ Producción' : '✗ Venta'} - {item.marca}
+                                                    {item.tipo === 'produccion' ? '✓ Producción' : 
+                                                     item.tipo === 'venta' ? '✗ Venta' : 
+                                                     '🔄 Reset'} {item.marca ? `- ${item.marca}` : ''}
                                                 </p>
                                                 {item.trabajador && <p className="text-xs text-gray-600 mt-1">👤 {item.trabajador}</p>}
+                                                {item.descripcion && <p className="text-xs text-gray-600 mt-1">{item.descripcion}</p>}
                                                 <p className="text-xs text-gray-500 mt-1">🕐 {formatearFecha(item.fecha)}</p>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-2xl font-bold text-gray-800">{item.cantidad}</p>
-                                                <p className="text-xs text-gray-500">bolsas</p>
-                                            </div>
+                                            {item.cantidad && (
+                                                <div className="text-right">
+                                                    <p className="text-2xl font-bold text-gray-800">{item.cantidad}</p>
+                                                    <p className="text-xs text-gray-500">bolsas</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -603,4 +818,4 @@
         ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
-</html>                                
+</html>                          
