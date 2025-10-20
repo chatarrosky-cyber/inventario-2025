@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Inventario</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
     <div id="root"></div>
@@ -128,6 +129,10 @@
             const [fechaFiltro, setFechaFiltro] = useState(new Date().toISOString().split('T')[0]);
             const [mostrarModalReset, setMostrarModalReset] = useState(false);
             const [mostrarModalExcel, setMostrarModalExcel] = useState(false);
+            const [claveReset, setClaveReset] = useState('');
+            const [editandoTrabajador, setEditandoTrabajador] = useState(null);
+            const [editandoMarca, setEditandoMarca] = useState(null);
+            const [nombreEditado, setNombreEditado] = useState('');
 
             if (cargando) {
                 return (
@@ -174,6 +179,11 @@
             };
 
             const resetearProduccionDiaria = () => {
+                if (claveReset !== '75078248') {
+                    alert('❌ Contraseña incorrecta');
+                    return;
+                }
+
                 const nuevosTrabajadores = datos.trabajadores.map(t => ({
                     ...t,
                     produccion: {}
@@ -193,28 +203,79 @@
                 });
                 
                 setMostrarModalReset(false);
+                setClaveReset('');
                 mostrarMensajeExito();
             };
 
             const exportarAExcel = () => {
-                let csv = 'Fecha,Tipo,Trabajador,Marca,Cantidad\n';
-                
+                const wb = XLSX.utils.book_new();
+                const inventarioTotal = calcularInventarioTotal();
+
+                // HOJA 1: INVENTARIO ACTUAL
+                const wsInventario = [];
+                wsInventario.push(['INVENTARIO ACTUAL']);
+                wsInventario.push(['Marca', 'Cantidad Disponible']);
+                datos.marcas.forEach(marca => {
+                    wsInventario.push([marca, inventarioTotal[marca] || 0]);
+                });
+                wsInventario.push([]);
+                wsInventario.push(['TOTAL BOLSAS:', `=SUM(B3:B${2 + datos.marcas.length})`]);
+
+                const ws1 = XLSX.utils.aoa_to_sheet(wsInventario);
+                ws1['!cols'] = [{wch: 20}, {wch: 20}];
+                XLSX.utils.book_append_sheet(wb, ws1, 'Inventario Actual');
+
+                // HOJA 2: PRODUCCIÓN POR TRABAJADOR
+                const wsProduccion = [];
+                wsProduccion.push(['PRODUCCIÓN POR TRABAJADOR']);
+                wsProduccion.push(['Trabajador', 'Marca', 'Cantidad']);
+                datos.trabajadores.forEach(trabajador => {
+                    Object.entries(trabajador.produccion || {}).forEach(([marca, cant]) => {
+                        wsProduccion.push([trabajador.nombre, marca, cant]);
+                    });
+                });
+                wsProduccion.push([]);
+                wsProduccion.push(['TOTAL PRODUCIDO:', '', `=SUM(C3:C${2 + wsProduccion.length - 4})`]);
+
+                const ws2 = XLSX.utils.aoa_to_sheet(wsProduccion);
+                ws2['!cols'] = [{wch: 20}, {wch: 20}, {wch: 15}];
+                XLSX.utils.book_append_sheet(wb, ws2, 'Producción');
+
+                // HOJA 3: VENTAS
+                const wsVentas = [];
+                wsVentas.push(['VENTAS DEL DÍA']);
+                wsVentas.push(['Marca', 'Cantidad Vendida']);
+                Object.entries(datos.ventas || {}).forEach(([marca, cant]) => {
+                    wsVentas.push([marca, cant]);
+                });
+                wsVentas.push([]);
+                wsVentas.push(['TOTAL VENDIDO:', `=SUM(B3:B${2 + Object.keys(datos.ventas || {}).length})`]);
+
+                const ws3 = XLSX.utils.aoa_to_sheet(wsVentas);
+                ws3['!cols'] = [{wch: 20}, {wch: 20}];
+                XLSX.utils.book_append_sheet(wb, ws3, 'Ventas');
+
+                // HOJA 4: HISTORIAL COMPLETO
+                const wsHistorial = [];
+                wsHistorial.push(['HISTORIAL DE MOVIMIENTOS']);
+                wsHistorial.push(['Fecha', 'Tipo', 'Trabajador', 'Marca', 'Cantidad']);
                 (datos.historial || []).forEach(item => {
                     const fecha = new Date(item.fecha).toLocaleString('es-ES');
                     const tipo = item.tipo === 'produccion' ? 'Producción' : item.tipo === 'venta' ? 'Venta' : 'Reset';
-                    const trabajador = item.trabajador || '-';
-                    const marca = item.marca || '-';
-                    const cantidad = item.cantidad || '-';
-                    csv += `${fecha},${tipo},${trabajador},${marca},${cantidad}\n`;
+                    wsHistorial.push([
+                        fecha,
+                        tipo,
+                        item.trabajador || '-',
+                        item.marca || '-',
+                        item.cantidad || '-'
+                    ]);
                 });
 
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement('a');
-                const url = URL.createObjectURL(blob);
-                link.setAttribute('href', url);
-                link.setAttribute('download', `inventario_${new Date().toISOString().split('T')[0]}.csv`);
-                link.click();
-                
+                const ws4 = XLSX.utils.aoa_to_sheet(wsHistorial);
+                ws4['!cols'] = [{wch: 20}, {wch: 15}, {wch: 20}, {wch: 20}, {wch: 15}];
+                XLSX.utils.book_append_sheet(wb, ws4, 'Historial');
+
+                XLSX.writeFile(wb, `Inventario_${new Date().toISOString().split('T')[0]}.xlsx`);
                 mostrarMensajeExito();
             };
 
@@ -229,6 +290,31 @@
                 }
             };
 
+            const eliminarTrabajador = (nombre) => {
+                if (confirm(`¿Eliminar a ${nombre}? Se perderá toda su información.`)) {
+                    actualizarDatos({
+                        ...datos,
+                        trabajadores: datos.trabajadores.filter(t => t.nombre !== nombre)
+                    });
+                    mostrarMensajeExito();
+                }
+            };
+
+            const editarTrabajador = (nombreViejo, nombreNuevo) => {
+                if (nombreNuevo.trim() && nombreNuevo !== nombreViejo) {
+                    const nuevosTrabajadores = datos.trabajadores.map(t => 
+                        t.nombre === nombreViejo ? { ...t, nombre: nombreNuevo } : t
+                    );
+                    actualizarDatos({
+                        ...datos,
+                        trabajadores: nuevosTrabajadores
+                    });
+                    setEditandoTrabajador(null);
+                    setNombreEditado('');
+                    mostrarMensajeExito();
+                }
+            };
+
             const agregarMarca = () => {
                 if (nuevaMarca.trim() && !datos.marcas.includes(nuevaMarca)) {
                     actualizarDatos({
@@ -236,6 +322,29 @@
                         marcas: [...datos.marcas, nuevaMarca]
                     });
                     setNuevaMarca('');
+                    mostrarMensajeExito();
+                }
+            };
+
+            const eliminarMarca = (marca) => {
+                if (confirm(`¿Eliminar la marca ${marca}? Se perderá toda su información.`)) {
+                    actualizarDatos({
+                        ...datos,
+                        marcas: datos.marcas.filter(m => m !== marca)
+                    });
+                    mostrarMensajeExito();
+                }
+            };
+
+            const editarMarca = (marcaVieja, marcaNueva) => {
+                if (marcaNueva.trim() && marcaNueva !== marcaVieja) {
+                    const nuevasMarcas = datos.marcas.map(m => m === marcaVieja ? marcaNueva : m);
+                    actualizarDatos({
+                        ...datos,
+                        marcas: nuevasMarcas
+                    });
+                    setEditandoMarca(null);
+                    setNombreEditado('');
                     mostrarMensajeExito();
                 }
             };
@@ -273,15 +382,30 @@
 
             const registrarVenta = () => {
                 if (marcaVenta && cantidadVenta) {
+                    const inventarioTotal = calcularInventarioTotal();
+                    const stockDisponible = inventarioTotal[marcaVenta] || 0;
+                    const cantidadAVender = parseInt(cantidadVenta);
+                    
+                    // Validar que hay stock suficiente
+                    if (stockDisponible < cantidadAVender) {
+                        alert(`❌ STOCK INSUFICIENTE\n\n` +
+                              `Marca: ${marcaVenta}\n` +
+                              `Stock disponible: ${stockDisponible} bolsas\n` +
+                              `Cantidad solicitada: ${cantidadAVender} bolsas\n\n` +
+                              `Faltan ${cantidadAVender - stockDisponible} bolsas para completar esta venta.`);
+                        return;
+                    }
+                    
+                    // Si hay stock suficiente, proceder con la venta
                     const nuevasVentas = {
                         ...(datos.ventas || {}),
-                        [marcaVenta]: ((datos.ventas || {})[marcaVenta] || 0) + parseInt(cantidadVenta)
+                        [marcaVenta]: ((datos.ventas || {})[marcaVenta] || 0) + cantidadAVender
                     };
                     const nuevoHistorial = [...(datos.historial || []), {
                         fecha: new Date().toISOString(),
                         tipo: 'venta',
                         marca: marcaVenta,
-                        cantidad: parseInt(cantidadVenta)
+                        cantidad: cantidadAVender
                     }];
                     actualizarDatos({
                         ...datos,
@@ -289,6 +413,7 @@
                         historial: nuevoHistorial
                     });
                     setCantidadVenta('');
+                    setMarcaVenta('');
                     mostrarMensajeExito();
                 }
             };
@@ -437,6 +562,7 @@
                                             onChange={(e) => setNuevoTrabajador(e.target.value)}
                                             placeholder="Nombre completo"
                                             className="flex-1 p-3 border-2 border-gray-300 rounded-lg"
+                                            onKeyPress={(e) => e.key === 'Enter' && agregarTrabajador()}
                                         />
                                         <button onClick={agregarTrabajador} className="bg-green-600 text-white px-6 rounded-lg font-bold hover:bg-green-700">
                                             + Agregar
@@ -444,11 +570,55 @@
                                     </div>
                                     <div className="space-y-2">
                                         {datos.trabajadores.map(t => (
-                                            <div key={t.nombre} className="bg-gray-50 p-4 rounded-lg flex justify-between items-center border-l-4 border-green-500">
-                                                <span className="font-semibold">{t.nombre}</span>
-                                                <span className="text-sm text-gray-600 bg-white px-3 py-1 rounded-full">
-                                                    {Object.keys(t.produccion || {}).length} marcas
-                                                </span>
+                                            <div key={t.nombre} className="bg-gray-50 p-4 rounded-lg border-l-4 border-green-500">
+                                                {editandoTrabajador === t.nombre ? (
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={nombreEditado}
+                                                            onChange={(e) => setNombreEditado(e.target.value)}
+                                                            className="flex-1 p-2 border-2 border-blue-400 rounded"
+                                                            autoFocus
+                                                            onKeyPress={(e) => e.key === 'Enter' && editarTrabajador(t.nombre, nombreEditado)}
+                                                        />
+                                                        <button
+                                                            onClick={() => editarTrabajador(t.nombre, nombreEditado)}
+                                                            className="bg-blue-600 text-white px-3 rounded hover:bg-blue-700"
+                                                        >
+                                                            ✓
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditandoTrabajador(null);
+                                                                setNombreEditado('');
+                                                            }}
+                                                            className="bg-gray-400 text-white px-3 rounded hover:bg-gray-500"
+                                                        >
+                                                            ✗
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="font-semibold">{t.nombre}</span>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setEditandoTrabajador(t.nombre);
+                                                                    setNombreEditado(t.nombre);
+                                                                }}
+                                                                className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+                                                            >
+                                                                ✏️ Editar
+                                                            </button>
+                                                            <button
+                                                                onClick={() => eliminarTrabajador(t.nombre)}
+                                                                className="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600"
+                                                            >
+                                                                🗑️ Eliminar
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -462,15 +632,63 @@
                                             onChange={(e) => setNuevaMarca(e.target.value)}
                                             placeholder="Nueva marca"
                                             className="flex-1 p-3 border-2 border-gray-300 rounded-lg"
+                                            onKeyPress={(e) => e.key === 'Enter' && agregarMarca()}
                                         />
                                         <button onClick={agregarMarca} className="bg-blue-600 text-white px-6 rounded-lg font-bold hover:bg-blue-700">
                                             + Agregar
                                         </button>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid gap-2">
                                         {datos.marcas.map(m => (
-                                            <div key={m} className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center font-semibold text-blue-800 border-2 border-blue-200">
-                                                {m}
+                                            <div key={m} className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg border-2 border-blue-200">
+                                                {editandoMarca === m ? (
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={nombreEditado}
+                                                            onChange={(e) => setNombreEditado(e.target.value)}
+                                                            className="flex-1 p-2 border-2 border-blue-400 rounded"
+                                                            autoFocus
+                                                            onKeyPress={(e) => e.key === 'Enter' && editarMarca(m, nombreEditado)}
+                                                        />
+                                                        <button
+                                                            onClick={() => editarMarca(m, nombreEditado)}
+                                                            className="bg-blue-600 text-white px-3 rounded hover:bg-blue-700"
+                                                        >
+                                                            ✓
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditandoMarca(null);
+                                                                setNombreEditado('');
+                                                            }}
+                                                            className="bg-gray-400 text-white px-3 rounded hover:bg-gray-500"
+                                                        >
+                                                            ✗
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="font-semibold text-blue-800">{m}</span>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setEditandoMarca(m);
+                                                                    setNombreEditado(m);
+                                                                }}
+                                                                className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
+                                                            >
+                                                                ✏️
+                                                            </button>
+                                                            <button
+                                                                onClick={() => eliminarMarca(m)}
+                                                                className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -588,15 +806,32 @@
                             </div>
                         )}
 
-                        {/* Modal Reset */}
+                        {/* Modal Reset CON CONTRASEÑA */}
                         {mostrarModalReset && (
                             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                                 <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
-                                    <h2 className="text-2xl font-bold text-red-600 mb-4">⚠️ Confirmar Reset</h2>
-                                    <p className="text-gray-700 mb-6">¿Estás seguro de que quieres borrar toda la producción del día? Esta acción no se puede deshacer.</p>
+                                    <h2 className="text-2xl font-bold text-red-600 mb-4">🔒 Reset de Producción</h2>
+                                    <p className="text-gray-700 mb-4">¿Estás seguro de que quieres borrar toda la producción del día?</p>
+                                    <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4">
+                                        <p className="text-sm font-semibold text-yellow-800">⚠️ Esta acción no se puede deshacer</p>
+                                    </div>
+                                    <div className="mb-6">
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Ingresa la contraseña:</label>
+                                        <input
+                                            type="password"
+                                            value={claveReset}
+                                            onChange={(e) => setClaveReset(e.target.value)}
+                                            placeholder="Contraseña requerida"
+                                            className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-red-500 focus:outline-none"
+                                            onKeyPress={(e) => e.key === 'Enter' && resetearProduccionDiaria()}
+                                        />
+                                    </div>
                                     <div className="flex gap-4">
                                         <button 
-                                            onClick={() => setMostrarModalReset(false)}
+                                            onClick={() => {
+                                                setMostrarModalReset(false);
+                                                setClaveReset('');
+                                            }}
                                             className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300"
                                         >
                                             Cancelar
@@ -605,7 +840,7 @@
                                             onClick={resetearProduccionDiaria}
                                             className="flex-1 bg-red-600 text-white py-3 rounded-lg font-bold hover:bg-red-700"
                                         >
-                                            Sí, Borrar Todo
+                                            🔄 Resetear
                                         </button>
                                     </div>
                                 </div>
@@ -617,16 +852,17 @@
                             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                                 <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl">
                                     <h2 className="text-2xl font-bold text-green-600 mb-4">📊 Exportar a Excel</h2>
-                                    <p className="text-gray-700 mb-4">Se descargará un archivo CSV con todo el historial de movimientos.</p>
+                                    <p className="text-gray-700 mb-4">Se descargará un archivo Excel (.xlsx) con:</p>
+                                    <ul className="list-disc list-inside text-gray-700 mb-4 space-y-2">
+                                        <li>Inventario actual por marca</li>
+                                        <li>Producción por trabajador</li>
+                                        <li>Ventas del día</li>
+                                        <li>Historial completo de movimientos</li>
+                                        <li><strong>Fórmulas editables incluidas</strong></li>
+                                    </ul>
                                     <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
-                                        <p className="text-sm font-semibold text-blue-800 mb-2">💡 Tip para Google Sheets:</p>
-                                        <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                                            <li>Descarga el archivo CSV</li>
-                                            <li>Ve a Google Sheets (sheets.google.com)</li>
-                                            <li>Archivo → Importar → Subir</li>
-                                            <li>Selecciona el archivo descargado</li>
-                                            <li>¡Listo! Ya tienes tu Excel en la nube</li>
-                                        </ol>
+                                        <p className="text-sm font-semibold text-blue-800 mb-2">💡 El archivo incluye fórmulas automáticas</p>
+                                        <p className="text-sm text-blue-700">Puedes editar las cantidades y las fórmulas se actualizarán automáticamente en Excel o Google Sheets</p>
                                     </div>
                                     <div className="flex gap-4">
                                         <button 
@@ -642,7 +878,7 @@
                                             }}
                                             className="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700"
                                         >
-                                            📥 Descargar CSV
+                                            📥 Descargar Excel
                                         </button>
                                     </div>
                                 </div>
@@ -818,4 +1054,4 @@
         ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
-</html>                          
+</html>
