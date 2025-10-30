@@ -10,14 +10,11 @@
 <body>
     <div id="root"></div>
 
-    <!-- React -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
-    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Firebase v9 (modular) -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
         import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
@@ -76,8 +73,8 @@
                                 ],
                                 ventas: { 'Ozono': 300 },
                                 historial: [
-                                    { fecha: new Date().toISOString(), tipo: 'produccion', trabajador: 'Andrea', marca: 'Sandy', cantidad: 1500 },
-                                    { fecha: new Date().toISOString(), tipo: 'venta', marca: 'Ozono', cantidad: 300 }
+                                    { id: Date.now() + 1, fecha: new Date().toISOString(), tipo: 'produccion', trabajador: 'Andrea', marca: 'Sandy', cantidad: 1500 },
+                                    { id: Date.now() + 2, fecha: new Date().toISOString(), tipo: 'venta', marca: 'Ozono', cantidad: 300 }
                                 ]
                             };
                             await window.firebaseDB.setDoc('datos', datosIniciales);
@@ -134,6 +131,13 @@
             const [editandoMarca, setEditandoMarca] = useState(null);
             const [nombreEditado, setNombreEditado] = useState('');
 
+            // NUEVOS ESTADOS PARA MODO EDITOR
+            const [mostrarModalEditor, setMostrarModalEditor] = useState(false);
+            const [claveEditor, setClaveEditor] = useState('');
+            const [modoEditor, setModoEditor] = useState(false);
+            const [movimientoAEditar, setMovimientoAEditar] = useState(null);
+            const [nuevaCantidadEdicion, setNuevaCantidadEdicion] = useState('');
+
             if (cargando) {
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -179,7 +183,8 @@
             };
 
             const resetearProduccionDiaria = () => {
-                if (claveReset !== '75078248') {
+                const PASSWORD = '75078248';
+                if (claveReset !== PASSWORD) {
                     alert('❌ Contraseña incorrecta');
                     return;
                 }
@@ -190,6 +195,7 @@
                 }));
                 
                 const registroReset = {
+                    id: Date.now(),
                     fecha: new Date().toISOString(),
                     tipo: 'reset',
                     descripcion: 'Reset de producción diaria'
@@ -204,6 +210,91 @@
                 
                 setMostrarModalReset(false);
                 setClaveReset('');
+                mostrarMensajeExito();
+            };
+
+            // NUEVA FUNCIÓN: ACTIVAR MODO EDITOR
+            const activarModoEditor = () => {
+                const PASSWORD = '24717288';
+                if (claveEditor !== PASSWORD) {
+                    alert('❌ Contraseña incorrecta');
+                    return;
+                }
+
+                setModoEditor(true);
+                setMostrarModalEditor(false);
+                setClaveEditor('');
+                setVista('editor'); // Cambia a la nueva vista de edición
+                mostrarMensajeExito();
+            };
+
+            // NUEVA FUNCIÓN: EDITAR MOVIMIENTO
+            const editarMovimiento = () => {
+                if (!movimientoAEditar || !nuevaCantidadEdicion || isNaN(parseInt(nuevaCantidadEdicion))) {
+                    alert('❌ Datos de edición incompletos o inválidos.');
+                    return;
+                }
+
+                const nuevaCantidad = parseInt(nuevaCantidadEdicion);
+                const cantidadOriginal = movimientoAEditar.cantidad;
+                const diferencia = nuevaCantidad - cantidadOriginal;
+                const historialBase = datos.historial || [];
+
+                let nuevosTrabajadores = [...datos.trabajadores];
+                let nuevasVentas = { ...datos.ventas };
+                
+                // 1. Modificar el registro en el historial original
+                const nuevoHistorial = historialBase.map(item => {
+                    if (item.id === movimientoAEditar.id) {
+                        return { ...item, cantidad: nuevaCantidad, editado: true };
+                    }
+                    return item;
+                });
+
+                // 2. Ajustar el inventario (producción/ventas)
+                if (movimientoAEditar.tipo === 'produccion') {
+                    nuevosTrabajadores = nuevosTrabajadores.map(t => {
+                        if (t.nombre === movimientoAEditar.trabajador) {
+                            return {
+                                ...t,
+                                produccion: {
+                                    ...(t.produccion || {}),
+                                    [movimientoAEditar.marca]: (t.produccion[movimientoAEditar.marca] || 0) + diferencia
+                                }
+                            };
+                        }
+                        return t;
+                    });
+                } else if (movimientoAEditar.tipo === 'venta') {
+                    nuevasVentas = {
+                        ...nuevasVentas,
+                        [movimientoAEditar.marca]: (nuevasVentas[movimientoAEditar.marca] || 0) + diferencia
+                    };
+                }
+
+                // 3. Crear el registro de edición
+                const registroEdicion = {
+                    id: Date.now(),
+                    fecha: new Date().toISOString(),
+                    tipo: 'edicion',
+                    descripcion: `Edición de ${movimientoAEditar.tipo} para ${movimientoAEditar.marca} por ${diferencia} bolsas. ID Original: ${movimientoAEditar.id}`,
+                    movimientoOriginal: {
+                        ...movimientoAEditar,
+                        cantidad: cantidadOriginal
+                    },
+                    nuevaCantidad: nuevaCantidad
+                };
+
+                actualizarDatos({
+                    ...datos,
+                    trabajadores: nuevosTrabajadores,
+                    ventas: nuevasVentas,
+                    historial: [...nuevoHistorial, registroEdicion]
+                });
+
+                // Limpiar estados de edición
+                setMovimientoAEditar(null);
+                setNuevaCantidadEdicion('');
                 mostrarMensajeExito();
             };
 
@@ -258,21 +349,23 @@
                 // HOJA 4: HISTORIAL COMPLETO
                 const wsHistorial = [];
                 wsHistorial.push(['HISTORIAL DE MOVIMIENTOS']);
-                wsHistorial.push(['Fecha', 'Tipo', 'Trabajador', 'Marca', 'Cantidad']);
+                wsHistorial.push(['Fecha', 'Tipo', 'Trabajador', 'Marca', 'Cantidad', 'ID', 'Editado']);
                 (datos.historial || []).forEach(item => {
                     const fecha = new Date(item.fecha).toLocaleString('es-ES');
-                    const tipo = item.tipo === 'produccion' ? 'Producción' : item.tipo === 'venta' ? 'Venta' : 'Reset';
+                    const tipo = item.tipo === 'produccion' ? 'Producción' : item.tipo === 'venta' ? 'Venta' : item.tipo === 'edicion' ? 'Edición' : 'Reset';
                     wsHistorial.push([
                         fecha,
                         tipo,
                         item.trabajador || '-',
                         item.marca || '-',
-                        item.cantidad || '-'
+                        item.cantidad || '-',
+                        item.id || '-',
+                        item.editado ? 'SI' : 'NO'
                     ]);
                 });
 
                 const ws4 = XLSX.utils.aoa_to_sheet(wsHistorial);
-                ws4['!cols'] = [{wch: 20}, {wch: 15}, {wch: 20}, {wch: 20}, {wch: 15}];
+                ws4['!cols'] = [{wch: 20}, {wch: 15}, {wch: 20}, {wch: 20}, {wch: 15}, {wch: 15}, {wch: 10}];
                 XLSX.utils.book_append_sheet(wb, ws4, 'Historial');
 
                 XLSX.writeFile(wb, `Inventario_${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -351,24 +444,27 @@
 
             const agregarProduccion = (trabajador, marca, cant) => {
                 if (trabajador && marca && cant) {
+                    const cantidadInt = parseInt(cant);
                     const nuevosTrabajadores = datos.trabajadores.map(t => {
                         if (t.nombre === trabajador) {
                             return {
                                 ...t,
                                 produccion: {
                                     ...(t.produccion || {}),
-                                    [marca]: ((t.produccion || {})[marca] || 0) + parseInt(cant)
+                                    [marca]: ((t.produccion || {})[marca] || 0) + cantidadInt
                                 }
                             };
                         }
                         return t;
                     });
                     const nuevoHistorial = [...(datos.historial || []), {
+                        id: Date.now(), // Añadir ID para identificación única
                         fecha: new Date().toISOString(),
                         tipo: 'produccion',
                         trabajador: trabajador,
                         marca: marca,
-                        cantidad: parseInt(cant)
+                        cantidad: cantidadInt,
+                        editado: false
                     }];
                     actualizarDatos({
                         ...datos,
@@ -402,10 +498,12 @@
                         [marcaVenta]: ((datos.ventas || {})[marcaVenta] || 0) + cantidadAVender
                     };
                     const nuevoHistorial = [...(datos.historial || []), {
+                        id: Date.now(), // Añadir ID para identificación única
                         fecha: new Date().toISOString(),
                         tipo: 'venta',
                         marca: marcaVenta,
-                        cantidad: cantidadAVender
+                        cantidad: cantidadAVender,
+                        editado: false
                     }];
                     actualizarDatos({
                         ...datos,
@@ -419,15 +517,18 @@
             };
 
             const filtrarHistorialPorFecha = () => {
-                if (!fechaFiltro) return datos.historial || [];
-                return (datos.historial || []).filter(item => {
+                const historialBase = (datos.historial || []).filter(item => item.tipo !== 'edicion'); // Excluir registros de edición para la vista de calendario
+                if (!fechaFiltro) return historialBase;
+                return historialBase.filter(item => {
                     const fechaItem = new Date(item.fecha).toISOString().split('T')[0];
                     return fechaItem === fechaFiltro;
                 });
             };
 
             const inventarioTotal = calcularInventarioTotal();
+            // La lógica de totalProducido es compleja. Se mantiene la original, asumiendo que es para el total de producción *histórica* neta.
             const totalProducido = Object.values(inventarioTotal).reduce((sum, val) => {
+                // Esta lógica parece buscar la producción bruta sumando la venta actual al inventario neto.
                 const venta = datos.ventas[datos.marcas.find(m => inventarioTotal[m] === val)] || 0;
                 return sum + Math.max(0, val + venta);
             }, 0);
@@ -438,7 +539,7 @@
                 return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
             };
 
-            // VISTA TRABAJADOR
+            // VISTA TRABAJADOR (Sin cambios funcionales)
             if (vista === 'trabajador') {
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 p-4">
@@ -539,7 +640,7 @@
                 );
             }
 
-            // VISTA CONFIGURACIÓN
+            // VISTA CONFIGURACIÓN (Sin cambios funcionales)
             if (vista === 'configuracion') {
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 p-4">
@@ -702,7 +803,7 @@
                 );
             }
 
-            // VISTA CALENDARIO
+            // VISTA CALENDARIO (Sin cambios funcionales)
             if (vista === 'calendario') {
                 const historialFiltrado = filtrarHistorialPorFecha();
                 const produccionDelDia = historialFiltrado.filter(h => h.tipo === 'produccion');
@@ -735,7 +836,7 @@
                                         <div className="space-y-2">
                                             {produccionDelDia.map((item, idx) => (
                                                 <div key={idx} className="bg-green-50 p-4 rounded-lg border-l-4 border-green-500">
-                                                    <p className="font-bold">{item.trabajador} - {item.marca}</p>
+                                                    <p className="font-bold">{item.trabajador} - {item.marca} {item.editado && <span className="text-xs text-yellow-600">(EDITADO)</span>}</p>
                                                     <p className="text-2xl font-bold text-green-700">{item.cantidad} bolsas</p>
                                                     <p className="text-sm text-gray-500">{formatearFecha(item.fecha)}</p>
                                                 </div>
@@ -752,7 +853,7 @@
                                         <div className="space-y-2">
                                             {ventasDelDia.map((item, idx) => (
                                                 <div key={idx} className="bg-red-50 p-4 rounded-lg border-l-4 border-red-500">
-                                                    <p className="font-bold">{item.marca}</p>
+                                                    <p className="font-bold">{item.marca} {item.editado && <span className="text-xs text-yellow-600">(EDITADO)</span>}</p>
                                                     <p className="text-2xl font-bold text-red-700">{item.cantidad} bolsas</p>
                                                     <p className="text-sm text-gray-500">{formatearFecha(item.fecha)}</p>
                                                 </div>
@@ -791,6 +892,121 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                );
+            }
+            
+            // NUEVA VISTA: EDITOR
+            if (vista === 'editor') {
+                const movimientosEditables = (datos.historial || [])
+                    .filter(item => (item.tipo === 'produccion' || item.tipo === 'venta'))
+                    .slice().reverse();
+                
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-orange-100 p-4">
+                        <div className="max-w-4xl mx-auto">
+                            {mostrarExito && (
+                                <div className="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
+                                    ✓ Edición Guardada
+                                </div>
+                            )}
+                            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+                                <div className="flex justify-between items-center">
+                                    <h1 className="text-3xl font-bold text-orange-700">✏️ Modo Editor Activo</h1>
+                                    <button 
+                                        onClick={() => {
+                                            setModoEditor(false);
+                                            setVista('admin');
+                                            setMovimientoAEditar(null);
+                                            setNuevaCantidadEdicion('');
+                                        }} 
+                                        className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-600 transition-colors"
+                                    >
+                                        ❌ Salir del Modo Editor
+                                    </button>
+                                </div>
+                                <p className="text-gray-600 mt-2">Selecciona un movimiento de producción o venta para corregir su cantidad.</p>
+                            </div>
+
+                            {movimientoAEditar ? (
+                                <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border-l-4 border-orange-500">
+                                    <h2 className="text-xl font-bold text-gray-800 mb-4">Modificar Movimiento (ID: {movimientoAEditar.id})</h2>
+                                    <div className="space-y-3">
+                                        <p><strong>Tipo:</strong> <span className={`font-semibold ${movimientoAEditar.tipo === 'produccion' ? 'text-green-600' : 'text-red-600'}`}>{movimientoAEditar.tipo.toUpperCase()}</span></p>
+                                        <p><strong>Marca:</strong> {movimientoAEditar.marca}</p>
+                                        {movimientoAEditar.trabajador && <p><strong>Trabajador:</strong> {movimientoAEditar.trabajador}</p>}
+                                        <p><strong>Cantidad Actual:</strong> <span className="text-2xl font-bold">{movimientoAEditar.cantidad}</span> bolsas</p>
+                                        
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">Nueva Cantidad de Bolsas</label>
+                                            <input
+                                                type="number"
+                                                value={nuevaCantidadEdicion}
+                                                onChange={(e) => setNuevaCantidadEdicion(e.target.value)}
+                                                placeholder="Ingresa la cantidad correcta"
+                                                className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none text-lg"
+                                            />
+                                        </div>
+                                        <div className="flex gap-4 pt-4">
+                                            <button 
+                                                onClick={() => setMovimientoAEditar(null)}
+                                                className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-bold hover:bg-gray-500"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button 
+                                                onClick={editarMovimiento}
+                                                disabled={!nuevaCantidadEdicion || parseInt(nuevaCantidadEdicion) === movimientoAEditar.cantidad}
+                                                className="flex-1 bg-orange-600 text-white py-3 rounded-lg font-bold hover:bg-orange-700 disabled:bg-gray-400"
+                                            >
+                                                Guardar Edición
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-white rounded-xl shadow-lg p-6">
+                                    <h2 className="text-xl font-bold text-gray-800 mb-4">Movimientos Recientes ({movimientosEditables.length})</h2>
+                                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                                        {movimientosEditables.map((item, idx) => (
+                                            <div key={item.id} className={`p-4 rounded-lg border-l-4 shadow-sm flex justify-between items-center ${
+                                                item.tipo === 'produccion' ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'
+                                            }`}>
+                                                <div>
+                                                    <p className="font-bold text-sm text-gray-800">
+                                                        {item.tipo === 'produccion' ? '✓ Producción' : '✗ Venta'} - {item.marca}
+                                                        {item.editado && <span className="text-xs text-yellow-600 ml-2">(EDITADO)</span>}
+                                                    </p>
+                                                    {item.trabajador && <p className="text-xs text-gray-600 mt-1">👤 {item.trabajador}</p>}
+                                                    <p className="text-xs text-gray-500 mt-1">🕐 {formatearFecha(item.fecha)}</p>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="text-right">
+                                                        <p className="text-xl font-bold text-gray-800">{item.cantidad}</p>
+                                                        <p className="text-xs text-gray-500">bolsas</p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => {
+                                                            setMovimientoAEditar(item);
+                                                            setNuevaCantidadEdicion(item.cantidad.toString());
+                                                        }}
+                                                        className="bg-blue-500 text-white p-3 rounded-full hover:bg-blue-600 transition-colors"
+                                                        title="Editar Cantidad"
+                                                    >
+                                                        ✏️
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {movimientosEditables.length === 0 && (
+                                            <div className="text-center py-8 text-gray-400">
+                                                <p className="text-lg">📝 No hay movimientos editables recientes</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 );
@@ -847,6 +1063,45 @@
                             </div>
                         )}
 
+                        {/* Modal MODO EDITOR CON CONTRASEÑA (CORREGIDO) */}
+                        {mostrarModalEditor && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                                <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
+                                    <h2 className="text-2xl font-bold text-orange-600 mb-4">🔒 Acceso a Modo Editor</h2>
+                                    <p className="text-gray-700 mb-4">Solo personal autorizado puede ingresar a este modo para corregir datos.</p>
+                                    <div className="mb-6">
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Ingresa la contraseña:</label>
+                                        <input
+                                            type="password"
+                                            autocomplete="off"
+                                            value={claveEditor}
+                                            onChange={(e) => setClaveEditor(e.target.value)}
+                                            placeholder="Contraseña requerida"
+                                            className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                                            onKeyPress={(e) => e.key === 'Enter' && activarModoEditor()}
+                                        />
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <button 
+                                            onClick={() => {
+                                                setMostrarModalEditor(false);
+                                                setClaveEditor('');
+                                            }}
+                                            className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button 
+                                            onClick={activarModoEditor}
+                                            className="flex-1 bg-orange-600 text-white py-3 rounded-lg font-bold hover:bg-orange-700"
+                                        >
+                                            ✏️ Entrar al Editor
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Modal Excel */}
                         {mostrarModalExcel && (
                             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -897,6 +1152,10 @@
                                     </div>
                                 </div>
                                 <div className="flex flex-wrap gap-3">
+                                    {/* BOTÓN EDITOR (LAPÍZ) */}
+                                    <button onClick={() => setMostrarModalEditor(true)} className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-700 shadow-lg">
+                                        ✏️ Editor
+                                    </button>
                                     <button onClick={() => setVista('calendario')} className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-700 shadow-lg">
                                         📅 Calendario
                                     </button>
@@ -1017,23 +1276,33 @@
                                     <div key={idx} className={`p-4 rounded-lg border-l-4 shadow-sm ${
                                         item.tipo === 'produccion' ? 'bg-green-50 border-green-500' : 
                                         item.tipo === 'venta' ? 'bg-red-50 border-red-500' : 
-                                        'bg-yellow-50 border-yellow-500'
+                                        item.tipo === 'edicion' ? 'bg-yellow-50 border-yellow-500' :
+                                        'bg-gray-50 border-gray-500'
                                     }`}>
                                         <div className="flex justify-between items-start">
                                             <div>
                                                 <p className="font-bold text-sm text-gray-800">
                                                     {item.tipo === 'produccion' ? '✓ Producción' : 
                                                      item.tipo === 'venta' ? '✗ Venta' : 
+                                                     item.tipo === 'edicion' ? '✏️ Edición (CORRECCIÓN)' : 
                                                      '🔄 Reset'} {item.marca ? `- ${item.marca}` : ''}
                                                 </p>
                                                 {item.trabajador && <p className="text-xs text-gray-600 mt-1">👤 {item.trabajador}</p>}
                                                 {item.descripcion && <p className="text-xs text-gray-600 mt-1">{item.descripcion}</p>}
+                                                {item.editado && item.tipo !== 'edicion' && <p className="text-xs text-orange-600 mt-1 font-semibold">EDITADO</p>}
                                                 <p className="text-xs text-gray-500 mt-1">🕐 {formatearFecha(item.fecha)}</p>
                                             </div>
-                                            {item.cantidad && (
+                                            {item.cantidad && item.tipo !== 'edicion' && (
                                                 <div className="text-right">
                                                     <p className="text-2xl font-bold text-gray-800">{item.cantidad}</p>
                                                     <p className="text-xs text-gray-500">bolsas</p>
+                                                </div>
+                                            )}
+                                            {item.nuevaCantidad && item.tipo === 'edicion' && ( // Para el registro de "Edición (CORRECCIÓN)"
+                                                <div className="text-right">
+                                                    <p className="text-xl font-bold text-gray-800">Nuevo: {item.nuevaCantidad}</p>
+                                                    <p className="text-xs text-gray-500">bolsas</p>
+                                                    <p className="text-xs text-gray-500">Anterior: {item.movimientoOriginal.cantidad}</p>
                                                 </div>
                                             )}
                                         </div>
