@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        /* Estilos personalizados para el toggle */
         .toggle-checkbox {
             position: absolute;
             left: 0;
@@ -25,7 +24,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #e5e7eb; /* gray-200 */
+            background-color: #e5e7eb;
             border-radius: 9999px;
             transition: background-color 0.2s;
         }
@@ -42,7 +41,7 @@
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
         .toggle-checkbox:checked + .toggle-label {
-            background-color: #34d399; /* emerald-400 */
+            background-color: #34d399;
         }
         .toggle-checkbox:checked + .toggle-label:after {
             transform: translateX(24px);
@@ -54,37 +53,32 @@
 
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <script type="module">
-        // --- Configuración e Inicialización de Firebase ---
-        // Se definen las importaciones pero solo se ejecutan si el protocolo no es 'file:'
+        // CONFIGURACIÓN DE FIREBASE - YA CONFIGURADO
+        const firebaseConfig = {
+            apiKey: "AIzaSyB4MmjlU6_l4wKzlQNqTMt4iGSR1R7zlk",
+            authDomain: "bolsa-nuevo.firebaseapp.com",
+            projectId: "bolsa-nuevo",
+            storageBucket: "bolsa-nuevo.firebasestorage.app",
+            messagingSenderId: "157478670392",
+            appId: "1:57478670392:web:1c311f8d3509655e788ced"
+        };
+
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Variables globales (solo relevantes si NO estamos en file://)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'inventario-bolsa';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
         let db, auth;
-        let currentUserId = 'default_user';
-
-        // Función para inicializar Firebase (solo llamada si NO es file://)
+        
         async function initFirebaseServices() {
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-                currentUserId = auth.currentUser.uid;
+                await signInAnonymously(auth);
 
                 window.firebaseDB = {
                     getDoc: (path) => getDoc(doc(db, 'inventario', path)),
@@ -93,69 +87,44 @@
                 };
                 return true;
             } catch (e) {
-                console.error("Auth or Firebase Init error:", e);
+                console.error("Error de Firebase:", e);
                 return false;
             }
         }
 
         window.firebaseInit = initFirebaseServices;
-        window.firebaseReady = true; // Se mantiene para compatibilidad con el hook
+        window.firebaseReady = true;
         window.dispatchEvent(new Event('firebaseReady'));
-        // --- FIN Configuración e Inicialización de Firebase ---
     </script>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // Datos iniciales de la aplicación, usados como fallback si Firebase falla o está en modo local
         const initialDataFallback = {
             marcas: ['Sandy', 'Manantial', 'Aguagol', 'Ozono', 'Doral', 'Chucky', 'Galeras', 'Fresh Water'],
             valvulas: { stock: 5000 }, 
             trabajadores: [
-                { nombre: 'Andrea', produccion: { 'Sandy': 1500, 'Manantial': 300, 'Aguagol': 500 }, deductValves: true },
-                { nombre: 'Sebastian', produccion: { 'Ozono': 100, 'Doral': 700, 'Chucky': 1000 }, deductValves: true },
-                { nombre: 'Ricardo', produccion: { 'Ozono': 1000, 'Galeras': 500, 'Fresh Water': 700 }, deductValves: false }
+                { nombre: 'Andrea', produccion: {}, deductValves: true },
+                { nombre: 'Sebastian', produccion: {}, deductValves: true },
+                { nombre: 'Ricardo', produccion: {}, deductValves: false }
             ],
-            ventas: { 'Ozono': 300 },
-            historial: [
-                { id: Date.now() + 1, fecha: new Date().toISOString(), tipo: 'produccion', trabajador: 'Andrea', marca: 'Sandy', cantidad: 1500, deductValves: true },
-                { id: Date.now() + 2, fecha: new Date().toISOString(), tipo: 'venta', marca: 'Ozono', cantidad: 300, deductValves: false }
-            ]
+            ventas: {},
+            historial: []
         };
-
 
         const useFirebaseData = () => {
             const [datos, setDatos] = useState(null);
             const [conectado, setConectado] = useState(false);
             const [cargando, setCargando] = useState(true);
-            const [isLocalFile, setIsLocalFile] = useState(false);
-            const datosEnMemoria = useRef(initialDataFallback); // Para persistir datos en memoria en modo local
+            const datosEnMemoria = useRef(initialDataFallback);
 
-            // Implementación simplificada de 'actualizarDatos' para el modo local
             const actualizarDatosMemoria = (nuevosDatos) => {
                 datosEnMemoria.current = nuevosDatos;
                 setDatos(nuevosDatos);
-                console.log("Datos actualizados en memoria (no guardados en Firebase).");
             };
-
 
             useEffect(() => {
                 const initData = async () => {
-                    // 1. Verificar protocolo
-                    const protocol = window.location.protocol;
-                    const isLocal = protocol === 'file:';
-                    setIsLocalFile(isLocal);
-
-                    if (isLocal) {
-                        // 2. MODO LOCAL (file://): Cargar datos iniciales y terminar
-                        console.warn("Ejecutando en MODO LOCAL (file://). Firebase está deshabilitado. Los datos NO se guardarán. Use un servidor HTTP para la persistencia.");
-                        setDatos(initialDataFallback);
-                        setConectado(false);
-                        setCargando(false);
-                        return;
-                    }
-
-                    // 3. MODO SERVIDOR (http:// o https://): Intentar conectar con Firebase
                     if (!window.firebaseReady) {
                         await new Promise(resolve => {
                             window.addEventListener('firebaseReady', resolve, { once: true });
@@ -165,15 +134,13 @@
                     const initSuccess = await window.firebaseInit();
 
                     if (!initSuccess) {
-                        // 4. Fallo de conexión o inicialización de Firebase: Usar fallback
-                        console.error("FALLO al inicializar Firebase. Usando datos de solo lectura.");
+                        console.error("No se pudo conectar a Firebase. Modo offline.");
                         setDatos(initialDataFallback);
                         setConectado(false);
                         setCargando(false);
                         return;
                     }
 
-                    // 5. Conexión exitosa: Cargar y suscribirse a datos
                     try {
                         const docSnap = await window.firebaseDB.getDoc('datos');
                         
@@ -182,7 +149,6 @@
                         if (docSnap.exists()) {
                             dataToUse = docSnap.data();
                             
-                            // Lógica de migración para asegurar la estructura (manteniendo solo la parte de deductValves)
                             const updatedTrabajadores = dataToUse.trabajadores.map(t => ({
                                 ...t,
                                 deductValves: t.deductValves === undefined ? true : t.deductValves 
@@ -203,22 +169,19 @@
                         setConectado(true);
                         setCargando(false);
 
-
-                        // Configurar listener en tiempo real
                         window.firebaseDB.onSnapshot('datos', (doc) => {
                             if (doc.exists()) {
                                 setDatos(doc.data());
                                 setConectado(true);
                             } else {
-                                // Esto puede ocurrir si se borra el documento
                                 setDatos(initialDataFallback);
-                                setConectado(true); // Sigue conectado, solo no hay datos
+                                setConectado(true);
                             }
                         });
 
                     } catch (error) {
-                        console.error('Error durante la carga o suscripción de datos:', error);
-                        setDatos(initialDataFallback); // Fallback si la suscripción falla
+                        console.error('Error cargando datos:', error);
+                        setDatos(initialDataFallback);
                         setConectado(false);
                         setCargando(false);
                     }
@@ -227,27 +190,23 @@
                 initData();
             }, []);
 
-            // Función de actualización que usa Firebase o la memoria, según el modo
             const actualizarDatos = async (nuevosDatos) => {
-                if (isLocalFile || !conectado) {
+                if (!conectado) {
                     actualizarDatosMemoria(nuevosDatos);
-                    // Mostrar una advertencia si se intenta guardar en modo offline/local
-                    if (!isLocalFile) console.warn('Intentando guardar sin conexión activa a Firebase. Guardado en memoria temporal.');
+                    console.warn('Sin conexión. Datos en memoria temporal.');
                     return;
                 }
                 
                 try {
                     await window.firebaseDB.setDoc('datos', nuevosDatos);
                 } catch (error) {
-                    console.error('Error al actualizar en Firebase:', error);
-                    // No usar alert(), usar el sistema de mensajes
+                    console.error('Error al actualizar Firebase:', error);
                 }
             };
 
-            return { datos, actualizarDatos, conectado, cargando, isLocalFile };
+            return { datos, actualizarDatos, conectado, cargando };
         };
 
-        // Componente de Mensaje de Alerta Personalizado
         const CustomAlert = ({ show, message, type }) => {
             if (!show) return null;
             let bgColor = '';
@@ -281,7 +240,6 @@
             );
         };
 
-        // Componente de Modal de Confirmación
         const ConfirmationModal = ({ show, message, onConfirm, onCancel }) => {
             if (!show) return null;
 
@@ -309,9 +267,8 @@
             );
         };
 
-
         function App() {
-            const { datos, actualizarDatos, conectado, cargando, isLocalFile } = useFirebaseData();
+            const { datos, actualizarDatos, conectado, cargando } = useFirebaseData();
             const [vista, setVista] = useState('admin');
             const [trabajadorActual, setTrabajadorActual] = useState('');
             const [marcaSeleccionada, setMarcaSeleccionada] = useState('');
@@ -334,18 +291,13 @@
             const [movimientoAEditar, setMovimientoAEditar] = useState(null);
             const [nuevaCantidadEdicion, setNuevaCantidadEdicion] = useState('');
             const [confirmacion, setConfirmacion] = useState(null); 
-
-            // FIX: Inicializar newValveStock de forma segura
-            // Usamos un valor por defecto si datos no está disponible.
             const [newValveStock, setNewValveStock] = useState(datos?.valvulas?.stock?.toString() || '5000'); 
             
-            // Sincroniza newValveStock cuando datos es cargado o cambia
             useEffect(() => {
                 if (datos && datos.valvulas && datos.valvulas.stock !== undefined) {
                     setNewValveStock(datos.valvulas.stock.toString());
                 }
             }, [datos]);
-
 
             const mostrarAlerta = (message, type = 'info') => {
                 setMensajeAlerta({ show: true, message, type });
@@ -353,7 +305,7 @@
             };
 
             const calcularInventarioTotal = () => {
-                if (!datos) return {}; // Seguridad adicional
+                if (!datos) return {};
                 const inventario = {};
                 datos.marcas.forEach(marca => { inventario[marca] = 0; });
                 datos.trabajadores.forEach(trabajador => {
@@ -372,9 +324,8 @@
             };
 
             const resetearProduccionDiaria = () => {
-                // Si está en modo local, no requiere contraseña para resetear los datos en memoria
                 const PASSWORD = '75078248';
-                if (!isLocalFile && claveReset !== PASSWORD) {
+                if (claveReset !== PASSWORD) {
                     mostrarAlerta('❌ Contraseña incorrecta', 'error');
                     return;
                 }
@@ -443,7 +394,6 @@
                     const trabajador = nuevosTrabajadores.find(t => t.nombre === movimientoAEditar.trabajador);
                     if (trabajador) {
                         if (movimientoAEditar.deductValves) { 
-                            // Si se restó originalmente, el ajuste es la diferencia
                             nuevoStockValvulas -= diferencia; 
                         }
 
@@ -488,7 +438,6 @@
                 const wb = XLSX.utils.book_new();
                 const inventarioTotal = calcularInventarioTotal();
 
-                // HOJA 1: INVENTARIO ACTUAL
                 const wsInventario = [];
                 wsInventario.push(['INVENTARIO ACTUAL']);
                 wsInventario.push(['Marca', 'Cantidad Disponible']);
@@ -503,10 +452,9 @@
                 ws1['!cols'] = [{wch: 20}, {wch: 20}];
                 XLSX.utils.book_append_sheet(wb, ws1, 'Inventario Actual');
 
-                // HOJA 2: PRODUCCIÓN POR TRABAJADOR
                 const wsProduccion = [];
                 wsProduccion.push(['PRODUCCIÓN POR TRABAJADOR']);
-                wsProduccion.push(['Trabajador', 'Marca', 'Cantidad', 'Resta Válvulas (Config)']); 
+                wsProduccion.push(['Trabajador', 'Marca', 'Cantidad', 'Resta Válvulas']); 
                 datos.trabajadores.forEach(trabajador => {
                     Object.entries(trabajador.produccion || {}).forEach(([marca, cant]) => {
                         wsProduccion.push([trabajador.nombre, marca, cant, trabajador.deductValves ? 'SI' : 'NO']);
@@ -519,7 +467,6 @@
                 ws2['!cols'] = [{wch: 20}, {wch: 20}, {wch: 15}, {wch: 20}]; 
                 XLSX.utils.book_append_sheet(wb, ws2, 'Producción');
                 
-                // HOJA 3: VENTAS
                 const wsVentas = [];
                 wsVentas.push(['VENTAS DEL DÍA']);
                 wsVentas.push(['Marca', 'Cantidad Vendida']);
@@ -533,10 +480,9 @@
                 ws3['!cols'] = [{wch: 20}, {wch: 20}];
                 XLSX.utils.book_append_sheet(wb, ws3, 'Ventas');
 
-                // HOJA 4: HISTORIAL COMPLETO
                 const wsHistorial = [];
                 wsHistorial.push(['HISTORIAL DE MOVIMIENTOS']);
-                wsHistorial.push(['Fecha', 'Tipo', 'Trabajador', 'Marca', 'Cantidad', 'Resta Válvulas (Mov)', 'ID', 'Editado']); 
+                wsHistorial.push(['Fecha', 'Tipo', 'Trabajador', 'Marca', 'Cantidad', 'Resta Válvulas', 'ID', 'Editado']); 
                 (datos.historial || []).forEach(item => {
                     const fecha = new Date(item.fecha).toLocaleString('es-ES');
                     const tipo = item.tipo === 'produccion' ? 'Producción' : item.tipo === 'venta' ? 'Venta' : item.tipo === 'edicion' ? 'Edición' : 'Reset';
@@ -565,7 +511,6 @@
                 if (nombre && !datos.trabajadores.find(t => t.nombre === nombre)) {
                     actualizarDatos({
                         ...datos,
-                        // NUEVO: Se añade el campo deductValves: true por defecto al nuevo trabajador
                         trabajadores: [...datos.trabajadores, { nombre: nombre, produccion: {}, deductValves: true }] 
                     });
                     setNuevoTrabajador('');
@@ -724,7 +669,7 @@
                         tipo: 'venta',
                         marca: marcaVenta,
                         cantidad: cantidadAVender,
-                        deductValves: false, 
+                        deductValves: false,
                         editado: false
                     }];
                     actualizarDatos({
@@ -772,7 +717,6 @@
                 mostrarAlerta(`Stock de válvulas actualizado a ${stockInt.toLocaleString()}.`, 'success');
             };
 
-
             const inventarioTotal = datos ? calcularInventarioTotal() : {};
             const totalProducido = datos ? Object.values(inventarioTotal).reduce((sum, val) => {
                 const venta = datos.ventas[datos.marcas.find(m => inventarioTotal[m] === val)] || 0;
@@ -791,19 +735,17 @@
                         <div className="text-center">
                             <div className="animate-spin rounded-full h-20 w-20 border-b-4 border-blue-600 mx-auto mb-4"></div>
                             <p className="text-2xl font-bold text-gray-700">Cargando datos...</p>
-                            {isLocalFile && <p className="text-sm text-gray-500 mt-2">(Modo local detectado, cargando fallback.)</p>}
                         </div>
                     </div>
                 );
             }
 
             if (!datos) {
-                // Este estado solo se alcanza si NO es local y Firebase falló sin dar datos
                 return (
                     <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
                         <div className="bg-white p-8 rounded-lg shadow-lg max-w-md">
-                            <h2 className="text-2xl font-bold text-red-600 mb-4">❌ Error Crítico de Conexión</h2>
-                            <p className="text-gray-700 mb-4">No se pudo obtener datos de Firebase. Por favor, asegúrate de que tienes conexión a internet.</p>
+                            <h2 className="text-2xl font-bold text-red-600 mb-4">❌ Error de Conexión</h2>
+                            <p className="text-gray-700 mb-4">No se pudo conectar a Firebase. Verifica tu configuración.</p>
                             <button onClick={() => window.location.reload()} className="w-full bg-blue-600 text-white py-2 rounded-lg">
                                 Reintentar
                             </button>
@@ -812,7 +754,6 @@
                 );
             }
 
-            // VISTA TRABAJADOR
             if (vista === 'trabajador') {
                 const trabajadorData = datos.trabajadores.find(t => t.nombre === trabajadorActual);
                 
@@ -825,16 +766,9 @@
                                     <h1 className="text-2xl font-bold text-gray-800">📝 Registro de Producción</h1>
                                     <div className={`flex items-center gap-2 ${conectado ? 'text-green-600' : 'text-red-600'}`}>
                                         <div className="w-3 h-3 rounded-full bg-current animate-pulse"></div>
-                                        <span className="text-sm font-semibold">{conectado ? 'Online' : (isLocalFile ? 'LOCAL OFFLINE' : 'Offline')}</span>
+                                        <span className="text-sm font-semibold">{conectado ? 'Online' : 'Offline'}</span>
                                     </div>
                                 </div>
-                                {/* MENSAJE DE ADVERTENCIA PARA MODO LOCAL */}
-                                {isLocalFile && (
-                                    <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded-lg">
-                                        <p className="font-bold">⚠️ ADVERTENCIA: Modo Local Activo</p>
-                                        <p className="text-sm">Los cambios **NO** se guardarán permanentemente. Usa un servidor web (http://) para guardar en Firebase.</p>
-                                    </div>
-                                )}
                                 {!trabajadorActual ? (
                                     <div>
                                         <p className="text-gray-600 mb-4 text-lg">Selecciona tu nombre:</p>
@@ -923,7 +857,6 @@
                 );
             }
 
-            // VISTA CONFIGURACIÓN (Añadido control de válvulas por trabajador)
             if (vista === 'configuracion') {
                 const stockValvulas = datos.valvulas.stock.toLocaleString();
 
@@ -941,7 +874,6 @@
                                 <h1 className="text-3xl font-bold text-gray-800">⚙️ Configuración y Administración</h1>
                             </div>
                             
-                            {/* NUEVO: PANEL DE GESTIÓN DE VÁLVULAS */}
                             <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border-l-4 border-emerald-500">
                                 <h2 className="text-xl font-bold text-emerald-700 mb-4">⚙️ Stock Global de Válvulas</h2>
                                 <div className="flex justify-between items-center mb-4">
@@ -955,22 +887,19 @@
                                             type="number"
                                             value={newValveStock}
                                             onChange={(e) => setNewValveStock(e.target.value)}
-                                            placeholder="Nuevo stock total (ej: 10000)"
+                                            placeholder="Nuevo stock total"
                                             className="flex-1 p-3 border-2 border-gray-300 rounded-lg"
                                         />
                                         <button onClick={updateValveStock} className="bg-emerald-600 text-white px-6 rounded-lg font-bold hover:bg-emerald-700">
-                                            Actualizar Stock
+                                            Actualizar
                                         </button>
                                     </div>
                                 </div>
                             </div>
-                            {/* FIN: PANEL DE GESTIÓN DE VÁLVULAS */}
-
 
                             <div className="grid md:grid-cols-2 gap-6">
                                 <div className="bg-white rounded-xl shadow-lg p-6">
-                                    <h2 className="text-xl font-bold text-gray-800 mb-4">👥 Trabajadores y Control de Válvulas</h2>
-                                    <p className="text-sm text-gray-500 mb-4">Controla si la producción de cada trabajador resta stock de válvulas automáticamente.</p>
+                                    <h2 className="text-xl font-bold text-gray-800 mb-4">👥 Trabajadores</h2>
                                     <div className="flex gap-2 mb-6">
                                         <input 
                                             type="text"
@@ -981,7 +910,7 @@
                                             onKeyPress={(e) => e.key === 'Enter' && agregarTrabajador()}
                                         />
                                         <button onClick={agregarTrabajador} className="bg-green-600 text-white px-6 rounded-lg font-bold hover:bg-green-700">
-                                            + Agregar
+                                            +
                                         </button>
                                     </div>
                                     <div className="space-y-3">
@@ -999,7 +928,7 @@
                                                         />
                                                         <button
                                                             onClick={() => editarTrabajador(t.nombre, nombreEditado)}
-                                                            className="bg-blue-600 text-white px-3 rounded hover:bg-blue-700"
+                                                            className="bg-blue-600 text-white px-3 rounded"
                                                         >
                                                             ✓
                                                         </button>
@@ -1008,7 +937,7 @@
                                                                 setEditandoTrabajador(null);
                                                                 setNombreEditado('');
                                                             }}
-                                                            className="bg-gray-400 text-white px-3 rounded hover:bg-gray-500"
+                                                            className="bg-gray-400 text-white px-3 rounded"
                                                         >
                                                             ✗
                                                         </button>
@@ -1017,31 +946,27 @@
                                                     <div className="flex justify-between items-center">
                                                         <div className="flex flex-col">
                                                             <span className="font-semibold">{t.nombre}</span>
-                                                            {/* NUEVO: Indicador de deducción */}
                                                             <span className={`text-xs font-bold ${t.deductValves ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                                DEDUCCIÓN DE VÁLVULAS: {t.deductValves ? 'ACTIVA' : 'INACTIVA'}
+                                                                Válvulas: {t.deductValves ? 'SI' : 'NO'}
                                                             </span>
                                                         </div>
-
                                                         <div className="flex items-center gap-2">
-                                                            {/* NUEVO: Toggle de control */}
                                                             <label className="relative inline-block w-12 h-6">
                                                                 <input type="checkbox" checked={t.deductValves} onChange={() => toggleDeductValves(t.nombre)} className="toggle-checkbox" />
                                                                 <span className="toggle-label"></span>
                                                             </label>
-
                                                             <button
                                                                 onClick={() => {
                                                                     setEditandoTrabajador(t.nombre);
                                                                     setNombreEditado(t.nombre);
                                                                 }}
-                                                                className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+                                                                className="bg-blue-500 text-white px-3 py-1 rounded text-sm"
                                                             >
                                                                 ✏️
                                                             </button>
                                                             <button
                                                                 onClick={() => eliminarTrabajador(t.nombre)}
-                                                                className="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600"
+                                                                className="bg-red-500 text-white px-3 py-1 rounded text-sm"
                                                             >
                                                                 🗑️
                                                             </button>
@@ -1064,7 +989,7 @@
                                             onKeyPress={(e) => e.key === 'Enter' && agregarMarca()}
                                         />
                                         <button onClick={agregarMarca} className="bg-blue-600 text-white px-6 rounded-lg font-bold hover:bg-blue-700">
-                                            + Agregar
+                                            +
                                         </button>
                                     </div>
                                     <div className="grid gap-2">
@@ -1082,7 +1007,7 @@
                                                         />
                                                         <button
                                                             onClick={() => editarMarca(m, nombreEditado)}
-                                                            className="bg-blue-600 text-white px-3 rounded hover:bg-blue-700"
+                                                            className="bg-blue-600 text-white px-3 rounded"
                                                         >
                                                             ✓
                                                         </button>
@@ -1091,7 +1016,7 @@
                                                                 setEditandoMarca(null);
                                                                 setNombreEditado('');
                                                             }}
-                                                            className="bg-gray-400 text-white px-3 rounded hover:bg-gray-500"
+                                                            className="bg-gray-400 text-white px-3 rounded"
                                                         >
                                                             ✗
                                                         </button>
@@ -1105,13 +1030,13 @@
                                                                     setEditandoMarca(m);
                                                                     setNombreEditado(m);
                                                                 }}
-                                                                className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
+                                                                className="bg-blue-500 text-white px-2 py-1 rounded text-xs"
                                                             >
                                                                 ✏️
                                                             </button>
                                                             <button
                                                                 onClick={() => eliminarMarca(m)}
-                                                                className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+                                                                className="bg-red-500 text-white px-2 py-1 rounded text-xs"
                                                             >
                                                                 🗑️
                                                             </button>
@@ -1131,7 +1056,6 @@
                 );
             }
 
-            // VISTA CALENDARIO (Sin cambios funcionales)
             if (vista === 'calendario') {
                 const historialFiltrado = filtrarHistorialPorFecha();
                 const produccionDelDia = historialFiltrado.filter(h => h.tipo === 'produccion');
@@ -1160,65 +1084,37 @@
 
                             <div className="grid md:grid-cols-2 gap-6 mb-6">
                                 <div className="bg-white rounded-xl shadow-lg p-6">
-                                    <h2 className="text-xl font-bold text-green-700 mb-4">✓ Producción del día</h2>
+                                    <h2 className="text-xl font-bold text-green-700 mb-4">✓ Producción</h2>
                                     {produccionDelDia.length > 0 ? (
                                         <div className="space-y-2">
                                             {produccionDelDia.map((item, idx) => (
                                                 <div key={idx} className="bg-green-50 p-4 rounded-lg border-l-4 border-green-500">
-                                                    <p className="font-bold">{item.trabajador} - {item.marca} {item.editado && <span className="text-xs text-yellow-600">(EDITADO)</span>}</p>
+                                                    <p className="font-bold">{item.trabajador} - {item.marca}</p>
                                                     <p className="text-2xl font-bold text-green-700">{item.cantidad} bolsas</p>
                                                     <p className="text-sm text-gray-500">{formatearFecha(item.fecha)}</p>
                                                 </div>
                                             ))}
                                         </div>
                                     ) : (
-                                        <p className="text-gray-500 text-center py-8">No hay producción registrada este día</p>
+                                        <p className="text-gray-500 text-center py-8">No hay producción</p>
                                     )}
                                 </div>
 
                                 <div className="bg-white rounded-xl shadow-lg p-6">
-                                    <h2 className="text-xl font-bold text-red-700 mb-4">✗ Ventas del día</h2>
+                                    <h2 className="text-xl font-bold text-red-700 mb-4">✗ Ventas</h2>
                                     {ventasDelDia.length > 0 ? (
                                         <div className="space-y-2">
                                             {ventasDelDia.map((item, idx) => (
                                                 <div key={idx} className="bg-red-50 p-4 rounded-lg border-l-4 border-red-500">
-                                                    <p className="font-bold">{item.marca} {item.editado && <span className="text-xs text-yellow-600">(EDITADO)</span>}</p>
+                                                    <p className="font-bold">{item.marca}</p>
                                                     <p className="text-2xl font-bold text-red-700">{item.cantidad} bolsas</p>
                                                     <p className="text-sm text-gray-500">{formatearFecha(item.fecha)}</p>
                                                 </div>
                                             ))}
                                         </div>
                                     ) : (
-                                        <p className="text-gray-500 text-center py-8">No hay ventas registradas este día</p>
+                                        <p className="text-gray-500 text-center py-8">No hay ventas</p>
                                     )}
-                                </div>
-                            </div>
-
-                            <div className="bg-white rounded-xl shadow-lg p-6">
-                                <h2 className="text-xl font-bold text-gray-800 mb-4">Resumen del día</h2>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div className="bg-blue-50 p-4 rounded-lg text-center">
-                                        <p className="text-sm text-gray-600">Total Producido</p>
-                                        <p className="text-3xl font-bold text-blue-700">
-                                            {produccionDelDia.reduce((sum, item) => sum + item.cantidad, 0)}
-                                        </p>
-                                    </div>
-                                    <div className="bg-red-50 p-4 rounded-lg text-center">
-                                        <p className="text-sm text-gray-600">Total Vendido</p>
-                                        <p className="text-3xl font-bold text-red-700">
-                                            {ventasDelDia.reduce((sum, item) => sum + item.cantidad, 0)}
-                                        </p>
-                                    </div>
-                                    <div className="bg-green-50 p-4 rounded-lg text-center">
-                                        <p className="text-sm text-gray-600">Registros</p>
-                                        <p className="text-3xl font-bold text-green-700">{historialFiltrado.length}</p>
-                                    </div>
-                                    <div className="bg-yellow-50 p-4 rounded-lg text-center">
-                                        <p className="text-sm text-gray-600">Trabajadores</p>
-                                        <p className="text-3xl font-bold text-yellow-700">
-                                            {new Set(produccionDelDia.map(p => p.trabajador)).size}
-                                        </p>
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1226,7 +1122,6 @@
                 );
             }
             
-            // VISTA EDITOR
             if (vista === 'editor') {
                 const movimientosEditables = (datos.historial || [])
                     .filter(item => (item.tipo === 'produccion' || item.tipo === 'venta'))
@@ -1238,105 +1133,73 @@
                         <div className="max-w-4xl mx-auto">
                             <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
                                 <div className="flex justify-between items-center">
-                                    <h1 className="text-3xl font-bold text-orange-700">✏️ Modo Editor Activo</h1>
+                                    <h1 className="text-3xl font-bold text-orange-700">✏️ Modo Editor</h1>
                                     <button 
                                         onClick={() => {
                                             setModoEditor(false);
                                             setVista('admin');
                                             setMovimientoAEditar(null);
-                                            setNuevaCantidadEdicion('');
                                         }} 
-                                        className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-600 transition-colors"
+                                        className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold"
                                     >
-                                        ❌ Salir del Modo Editor
+                                        ❌ Salir
                                     </button>
                                 </div>
-                                <p className="text-gray-600 mt-2">Selecciona un movimiento de producción o venta para corregir su cantidad. (Modifica inventario y stock de válvulas si aplica)</p>
                             </div>
 
                             {movimientoAEditar ? (
-                                <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border-l-4 border-orange-500">
-                                    <h2 className="text-xl font-bold text-gray-800 mb-4">Modificar Movimiento (ID: {movimientoAEditar.id})</h2>
+                                <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                                    <h2 className="text-xl font-bold mb-4">Editar Movimiento</h2>
                                     <div className="space-y-3">
-                                        <p><strong>Tipo:</strong> <span className={`font-semibold ${movimientoAEditar.tipo === 'produccion' ? 'text-green-600' : 'text-red-600'}`}>{movimientoAEditar.tipo.toUpperCase()}</span></p>
+                                        <p><strong>Tipo:</strong> {movimientoAEditar.tipo}</p>
                                         <p><strong>Marca:</strong> {movimientoAEditar.marca}</p>
-                                        {movimientoAEditar.trabajador && <p><strong>Trabajador:</strong> {movimientoAEditar.trabajador}</p>}
-                                        {movimientoAEditar.tipo === 'produccion' && (
-                                            <p><strong>Afecta Válvulas:</strong> <span className={`font-semibold ${movimientoAEditar.deductValves ? 'text-emerald-600' : 'text-red-600'}`}>{movimientoAEditar.deductValves ? 'SI' : 'NO'}</span></p>
-                                        )}
-                                        <p><strong>Cantidad Actual:</strong> <span className="text-2xl font-bold">{movimientoAEditar.cantidad}</span> bolsas</p>
-                                        
-                                        <div>
-                                            <label className="block text-sm font-bold text-gray-700 mb-2">Nueva Cantidad de Bolsas</label>
-                                            <input
-                                                type="number"
-                                                value={nuevaCantidadEdicion}
-                                                onChange={(e) => setNuevaCantidadEdicion(e.target.value)}
-                                                placeholder="Ingresa la cantidad correcta"
-                                                className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none text-lg"
-                                            />
-                                        </div>
-                                        <div className="flex gap-4 pt-4">
+                                        <p><strong>Cantidad Actual:</strong> {movimientoAEditar.cantidad}</p>
+                                        <input
+                                            type="number"
+                                            value={nuevaCantidadEdicion}
+                                            onChange={(e) => setNuevaCantidadEdicion(e.target.value)}
+                                            placeholder="Nueva cantidad"
+                                            className="w-full p-3 border-2 rounded-lg"
+                                        />
+                                        <div className="flex gap-4">
                                             <button 
                                                 onClick={() => setMovimientoAEditar(null)}
-                                                className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-bold hover:bg-gray-500"
+                                                className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-bold"
                                             >
                                                 Cancelar
                                             </button>
                                             <button 
                                                 onClick={editarMovimiento}
-                                                disabled={!nuevaCantidadEdicion || parseInt(nuevaCantidadEdicion) === movimientoAEditar.cantidad}
-                                                className="flex-1 bg-orange-600 text-white py-3 rounded-lg font-bold hover:bg-orange-700 disabled:bg-gray-400"
+                                                className="flex-1 bg-orange-600 text-white py-3 rounded-lg font-bold"
                                             >
-                                                Guardar Edición
+                                                Guardar
                                             </button>
                                         </div>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="bg-white rounded-xl shadow-lg p-6">
-                                    <h2 className="text-xl font-bold text-gray-800 mb-4">Movimientos Recientes ({movimientosEditables.length})</h2>
+                                    <h2 className="text-xl font-bold mb-4">Movimientos</h2>
                                     <div className="space-y-2 max-h-96 overflow-y-auto">
-                                        {movimientosEditables.map((item, idx) => (
-                                            <div key={item.id} className={`p-4 rounded-lg border-l-4 shadow-sm flex justify-between items-center ${
-                                                item.tipo === 'produccion' ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'
+                                        {movimientosEditables.map((item) => (
+                                            <div key={item.id} className={`p-4 rounded-lg flex justify-between ${
+                                                item.tipo === 'produccion' ? 'bg-green-50' : 'bg-red-50'
                                             }`}>
                                                 <div>
-                                                    <p className="font-bold text-sm text-gray-800">
-                                                        {item.tipo === 'produccion' ? '✓ Producción' : '✗ Venta'} - {item.marca}
-                                                        {item.editado && <span className="text-xs text-yellow-600 ml-2">(EDITADO)</span>}
-                                                    </p>
-                                                    {item.trabajador && <p className="text-xs text-gray-600 mt-1">👤 {item.trabajador}</p>}
-                                                    {item.tipo === 'produccion' && (
-                                                        <p className={`text-xs mt-1 font-semibold ${item.deductValves ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                            Válvulas: {item.deductValves ? 'Deducidas' : 'Ignoradas'}
-                                                        </p>
-                                                    )}
-                                                    <p className="text-xs text-gray-500 mt-1">🕐 {formatearFecha(item.fecha)}</p>
+                                                    <p className="font-bold">{item.marca}</p>
+                                                    <p className="text-sm">{item.cantidad} bolsas</p>
                                                 </div>
-                                                <div className="flex items-center gap-3">
-                                                    <div className="text-right">
-                                                        <p className="text-xl font-bold text-gray-800">{item.cantidad}</p>
-                                                        <p className="text-xs text-gray-500">bolsas</p>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => {
-                                                            setMovimientoAEditar(item);
-                                                            setNuevaCantidadEdicion(item.cantidad.toString());
-                                                        }}
-                                                        className="bg-blue-500 text-white p-3 rounded-full hover:bg-blue-600 transition-colors"
-                                                        title="Editar Cantidad"
-                                                    >
-                                                        ✏️
-                                                    </button>
-                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        setMovimientoAEditar(item);
+                                                        setNuevaCantidadEdicion(item.cantidad.toString());
+                                                    }}
+                                                    className="bg-blue-500 text-white px-4 rounded"
+                                                >
+                                                    ✏️
+                                                </button>
                                             </div>
                                         ))}
-                                        {movimientosEditables.length === 0 && (
-                                            <div className="text-center py-8 text-gray-400">
-                                                <p className="text-lg">📝 No hay movimientos editables recientes</p>
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
                             )}
@@ -1345,7 +1208,6 @@
                 );
             }
 
-            // VISTA ADMIN
             return (
                 <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
                     <CustomAlert {...mensajeAlerta} />
@@ -1355,41 +1217,35 @@
                         onConfirm={confirmacion?.onConfirm}
                         onCancel={() => setConfirmacion(null)}
                     />
-                    {/* Modal Reset CON CONTRASEÑA */}
                     {mostrarModalReset && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
                                 <h2 className="text-2xl font-bold text-red-600 mb-4">🔒 Reset de Producción</h2>
                                 <p className="text-gray-700 mb-4">¿Estás seguro de que quieres borrar toda la producción del día?</p>
-                                <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4">
-                                    <p className="text-sm font-semibold text-yellow-800">⚠️ Esta acción no se puede deshacer. Borra producción de trabajadores y ventas.</p>
+                                <div className="mb-6">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">Contraseña:</label>
+                                    <input
+                                        type="password"
+                                        value={claveReset}
+                                        onChange={(e) => setClaveReset(e.target.value)}
+                                        placeholder="Contraseña requerida"
+                                        className="w-full p-3 border-2 border-gray-300 rounded-lg"
+                                        onKeyPress={(e) => e.key === 'Enter' && resetearProduccionDiaria()}
+                                    />
                                 </div>
-                                {!isLocalFile && (
-                                    <div className="mb-6">
-                                        <label className="block text-sm font-bold text-gray-700 mb-2">Ingresa la contraseña:</label>
-                                        <input
-                                            type="password"
-                                            value={claveReset}
-                                            onChange={(e) => setClaveReset(e.target.value)}
-                                            placeholder="Contraseña requerida"
-                                            className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-red-500 focus:outline-none"
-                                            onKeyPress={(e) => e.key === 'Enter' && resetearProduccionDiaria()}
-                                        />
-                                    </div>
-                                )}
                                 <div className="flex gap-4">
                                     <button 
                                         onClick={() => {
                                             setMostrarModalReset(false);
                                             setClaveReset('');
                                         }}
-                                        className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300"
+                                        className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold"
                                     >
                                         Cancelar
                                     </button>
                                     <button 
                                         onClick={resetearProduccionDiaria}
-                                        className="flex-1 bg-red-600 text-white py-3 rounded-lg font-bold hover:bg-red-700"
+                                        className="flex-1 bg-red-600 text-white py-3 rounded-lg font-bold"
                                     >
                                         🔄 Resetear
                                     </button>
@@ -1398,21 +1254,19 @@
                         </div>
                     )}
 
-                    {/* Modal MODO EDITOR CON CONTRASEÑA */}
                     {mostrarModalEditor && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
-                                <h2 className="text-2xl font-bold text-orange-600 mb-4">🔒 Acceso a Modo Editor</h2>
-                                <p className="text-gray-700 mb-4">Solo personal autorizado puede ingresar a este modo para corregir datos.</p>
+                                <h2 className="text-2xl font-bold text-orange-600 mb-4">🔒 Modo Editor</h2>
+                                <p className="text-gray-700 mb-4">Solo personal autorizado puede ingresar a este modo.</p>
                                 <div className="mb-6">
-                                    <label className="block text-sm font-bold text-gray-700 mb-2">Ingresa la contraseña:</label>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">Contraseña:</label>
                                     <input
                                         type="password"
-                                        autocomplete="off"
                                         value={claveEditor}
                                         onChange={(e) => setClaveEditor(e.target.value)}
                                         placeholder="Contraseña requerida"
-                                        className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                                        className="w-full p-3 border-2 border-gray-300 rounded-lg"
                                         onKeyPress={(e) => e.key === 'Enter' && activarModoEditor()}
                                     />
                                 </div>
@@ -1422,35 +1276,30 @@
                                             setMostrarModalEditor(false);
                                             setClaveEditor('');
                                         }}
-                                        className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300"
+                                        className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold"
                                     >
                                         Cancelar
                                     </button>
                                     <button 
                                         onClick={activarModoEditor}
-                                        className="flex-1 bg-orange-600 text-white py-3 rounded-lg font-bold hover:bg-orange-700"
+                                        className="flex-1 bg-orange-600 text-white py-3 rounded-lg font-bold"
                                     >
-                                        ✏️ Entrar al Editor
+                                        ✏️ Entrar
                                     </button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* Modal Excel */}
                     {mostrarModalExcel && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl">
                                 <h2 className="text-2xl font-bold text-green-600 mb-4">📊 Exportar a Excel</h2>
-                                <p className="text-gray-700 mb-4">Se descargará un archivo Excel (.xlsx) con el historial completo de la aplicación, incluyendo el **stock de válvulas**.</p>
-                                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
-                                    <p className="text-sm font-semibold text-blue-800 mb-2">💡 El archivo incluye fórmulas automáticas</p>
-                                    <p className="text-sm text-blue-700">Puedes editar las cantidades y las fórmulas se actualizarán automáticamente en Excel o Google Sheets</p>
-                                </div>
+                                <p className="text-gray-700 mb-4">Se descargará un archivo Excel con todo el historial.</p>
                                 <div className="flex gap-4">
                                     <button 
                                         onClick={() => setMostrarModalExcel(false)}
-                                        className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300"
+                                        className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold"
                                     >
                                         Cancelar
                                     </button>
@@ -1459,9 +1308,9 @@
                                             exportarAExcel();
                                             setMostrarModalExcel(false);
                                         }}
-                                        className="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700"
+                                        className="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold"
                                     >
-                                        📥 Descargar Excel
+                                        📥 Descargar
                                     </button>
                                 </div>
                             </div>
@@ -1476,12 +1325,11 @@
                                     <div className="flex items-center gap-2">
                                         <div className={`w-3 h-3 rounded-full ${conectado ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
                                         <span className="text-sm font-semibold text-gray-600">
-                                            {conectado ? '✓ Conectado a Firebase' : (isLocalFile ? 'MODO LOCAL OFFLINE' : '✗ Sin conexión')}
+                                            {conectado ? '✓ Conectado a Firebase' : '✗ Sin conexión'}
                                         </span>
                                     </div>
                                 </div>
                                 <div className="flex flex-wrap gap-3">
-                                    {/* BOTONES */}
                                     <button onClick={() => setMostrarModalEditor(true)} className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-700 shadow-lg">
                                         ✏️ Editor
                                     </button>
@@ -1502,43 +1350,31 @@
                                     </button>
                                 </div>
                             </div>
-                            {/* ADVERTENCIA PROMINENTE DE MODO LOCAL */}
-                            {isLocalFile && (
-                                <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 mt-4 rounded-lg">
-                                    <p className="font-bold">🚨 MODO OFFLINE (file://) - NO SE GUARDA</p>
-                                    <p className="text-sm">La aplicación se está ejecutando desde un archivo local. Los cambios son temporales. Para guardar en Firebase, debes iniciar un servidor web local (Ej: `http://localhost:8000`).</p>
-                                </div>
-                            )}
                         </div>
                         
-                        {/* NUEVO: PANEL DE RESUMEN Y VÁLVULAS */}
                         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                             <div className="bg-white rounded-xl shadow-lg p-5 border-l-4 border-emerald-500 col-span-2">
-                                <p className="text-xs text-gray-600 font-semibold mb-1">Stock de Válvulas (Componentes)</p>
+                                <p className="text-xs text-gray-600 font-semibold mb-1">Stock de Válvulas</p>
                                 <p className="text-3xl font-bold text-emerald-700">{datos.valvulas.stock.toLocaleString()}</p>
-                                <p className="text-xs text-gray-500 mt-1">unidades disponibles</p>
                             </div>
                             <div className="bg-white rounded-xl shadow-lg p-5 border-l-4 border-blue-500">
                                 <p className="text-xs text-gray-600 font-semibold mb-1">Total Producido</p>
                                 <p className="text-3xl font-bold text-blue-700">{totalProducido}</p>
-                                <p className="text-xs text-gray-500 mt-1">bolsas</p>
                             </div>
                             <div className="bg-white rounded-xl shadow-lg p-5 border-l-4 border-red-500">
                                 <p className="text-xs text-gray-600 font-semibold mb-1">Total Vendido</p>
                                 <p className="text-3xl font-bold text-red-700">{totalVendido}</p>
-                                <p className="text-xs text-gray-500 mt-1">bolsas</p>
                             </div>
                             <div className="bg-white rounded-xl shadow-lg p-5 border-l-4 border-yellow-500">
-                                <p className="text-xs text-gray-600 font-semibold mb-1">Fecha Actual</p>
+                                <p className="text-xs text-gray-600 font-semibold mb-1">Fecha</p>
                                 <p className="text-lg font-bold text-yellow-700">{new Date().toLocaleDateString('es-ES')}</p>
-                                <p className="text-xs text-gray-500 mt-1">{new Date().toLocaleTimeString('es-ES', {hour: '2-digit', minute: '2-digit'})}</p>
                             </div>
                         </div>
 
                         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-                            <h2 className="text-xl font-bold text-gray-800 mb-4">🔻 Registrar Ventas del Día</h2>
+                            <h2 className="text-xl font-bold text-gray-800 mb-4">🔻 Registrar Ventas</h2>
                             <div className="grid md:grid-cols-3 gap-4">
-                                <select value={marcaVenta} onChange={(e) => setMarcaVenta(e.target.value)} className="p-3 border-2 border-gray-300 rounded-lg focus:border-red-500 focus:outline-none font-medium">
+                                <select value={marcaVenta} onChange={(e) => setMarcaVenta(e.target.value)} className="p-3 border-2 border-gray-300 rounded-lg">
                                     <option value="">-- Seleccionar marca --</option>
                                     {datos.marcas.map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
@@ -1547,12 +1383,12 @@
                                     value={cantidadVenta}
                                     onChange={(e) => setCantidadVenta(e.target.value)}
                                     placeholder="Cantidad vendida"
-                                    className="p-3 border-2 border-gray-300 rounded-lg focus:border-red-500 focus:outline-none"
+                                    className="p-3 border-2 border-gray-300 rounded-lg"
                                 />
                                 <button 
                                     onClick={registrarVenta}
-                                    disabled={!marcaVenta || !cantidadVenta || parseInt(cantidadVenta) <= 0}
-                                    className="bg-red-600 text-white py-3 rounded-lg font-bold hover:bg-red-700 shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                    disabled={!marcaVenta || !cantidadVenta}
+                                    className="bg-red-600 text-white py-3 rounded-lg font-bold hover:bg-red-700 disabled:bg-gray-400"
                                 >
                                     Registrar Venta
                                 </button>
@@ -1560,13 +1396,12 @@
                         </div>
 
                         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-                            <h2 className="text-xl font-bold text-gray-800 mb-4">📊 Inventario Actual por Marca</h2>
+                            <h2 className="text-xl font-bold text-gray-800 mb-4">📊 Inventario por Marca</h2>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                 {datos.marcas.map(marca => (
-                                    <div key={marca} className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border-2 border-blue-300 shadow-md">
+                                    <div key={marca} className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border-2 border-blue-300">
                                         <p className="text-sm font-semibold text-gray-600">{marca}</p>
                                         <p className="text-3xl font-bold text-blue-700">{inventarioTotal[marca] || 0}</p>
-                                        <p className="text-xs text-gray-500">bolsas disponibles</p>
                                     </div>
                                 ))}
                             </div>
@@ -1576,28 +1411,17 @@
                             <h2 className="text-xl font-bold text-gray-800 mb-4">👷 Producción por Trabajador</h2>
                             <div className="space-y-3">
                                 {datos.trabajadores.map(trabajador => (
-                                    <div key={trabajador.nombre} className="border-2 border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-all">
-                                        <h3 className="font-bold text-lg text-gray-800 mb-3 flex items-center gap-2">
-                                            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm">
-                                                {trabajador.nombre}
-                                            </span>
-                                            <span className="text-sm text-gray-500">
-                                                ({Object.values(trabajador.produccion || {}).reduce((a, b) => a + b, 0)} bolsas totales)
-                                            </span>
-                                            <span className={`text-xs font-bold ${trabajador.deductValves ? 'text-emerald-500' : 'text-red-500'} ml-2`}>
-                                                VÁLVULAS: {trabajador.deductValves ? 'SI' : 'NO'}
-                                            </span>
+                                    <div key={trabajador.nombre} className="border-2 border-gray-200 rounded-lg p-4">
+                                        <h3 className="font-bold text-lg text-gray-800 mb-3">
+                                            {trabajador.nombre} - {Object.values(trabajador.produccion || {}).reduce((a, b) => a + b, 0)} bolsas
                                         </h3>
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                             {Object.entries(trabajador.produccion || {}).map(([marca, cant]) => (
-                                                <div key={marca} className="bg-gray-50 p-3 rounded border-l-4 border-blue-500">
-                                                    <p className="text-xs text-gray-600 font-medium">{marca}</p>
-                                                    <p className="text-lg font-bold text-gray-800">{cant}</p>
+                                                <div key={marca} className="bg-gray-50 p-3 rounded">
+                                                    <p className="text-xs text-gray-600">{marca}</p>
+                                                    <p className="text-lg font-bold">{cant}</p>
                                                 </div>
                                             ))}
-                                            {Object.keys(trabajador.produccion || {}).length === 0 && (
-                                                <p className="col-span-full text-gray-400 text-sm text-center py-2">Sin producción registrada</p>
-                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -1605,54 +1429,28 @@
                         </div>
 
                         <div className="bg-white rounded-xl shadow-lg p-6">
-                            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                                📅 Historial de Movimientos Recientes
-                                <span className="text-sm font-normal text-gray-500">
-                                    ({(datos.historial || []).length} registros totales)
-                                </span>
-                            </h2>
+                            <h2 className="text-xl font-bold text-gray-800 mb-4">📅 Historial Reciente</h2>
                             <div className="space-y-2 max-h-96 overflow-y-auto">
                                 {(datos.historial || []).slice().reverse().slice(0, 20).map((item, idx) => (
-                                    <div key={idx} className={`p-4 rounded-lg border-l-4 shadow-sm ${
-                                        item.tipo === 'produccion' ? 'bg-green-50 border-green-500' : 
-                                        item.tipo === 'venta' ? 'bg-red-50 border-red-500' : 
-                                        item.tipo === 'edicion' ? 'bg-yellow-50 border-yellow-500' :
-                                        'bg-gray-50 border-gray-500'
+                                    <div key={idx} className={`p-4 rounded-lg ${
+                                        item.tipo === 'produccion' ? 'bg-green-50' : 
+                                        item.tipo === 'venta' ? 'bg-red-50' : 'bg-gray-50'
                                     }`}>
-                                        <div className="flex justify-between items-start">
+                                        <div className="flex justify-between">
                                             <div>
-                                                <p className="font-bold text-sm text-gray-800">
+                                                <p className="font-bold text-sm">
                                                     {item.tipo === 'produccion' ? '✓ Producción' : 
-                                                     item.tipo === 'venta' ? '✗ Venta' : 
-                                                     item.tipo === 'edicion' ? '✏️ Edición (CORRECCIÓN)' : 
-                                                     '🔄 Reset'} {item.marca ? `- ${item.marca}` : ''}
+                                                     item.tipo === 'venta' ? '✗ Venta' : '🔄 Reset'} {item.marca || ''}
                                                 </p>
-                                                {item.trabajador && <p className="text-xs text-gray-600 mt-1">👤 {item.trabajador}</p>}
-                                                {item.descripcion && <p className="text-xs text-gray-600 mt-1">{item.descripcion}</p>}
-                                                {item.editado && item.tipo !== 'edicion' && <p className="text-xs text-orange-600 mt-1 font-semibold">EDITADO</p>}
-                                                <p className="text-xs text-gray-500 mt-1">🕐 {formatearFecha(item.fecha)}</p>
+                                                {item.trabajador && <p className="text-xs text-gray-600">👤 {item.trabajador}</p>}
+                                                <p className="text-xs text-gray-500">{formatearFecha(item.fecha)}</p>
                                             </div>
-                                            {item.cantidad && item.tipo !== 'edicion' && (
-                                                <div className="text-right">
-                                                    <p className="text-2xl font-bold text-gray-800">{item.cantidad}</p>
-                                                    <p className="text-xs text-gray-500">bolsas</p>
-                                                </div>
-                                            )}
-                                            {item.nuevaCantidad && item.tipo === 'edicion' && (
-                                                <div className="text-right">
-                                                    <p className="text-xl font-bold text-gray-800">Nuevo: {item.nuevaCantidad}</p>
-                                                    <p className="text-xs text-gray-500">bolsas</p>
-                                                    <p className="text-xs text-gray-500">Anterior: {item.movimientoOriginal.cantidad}</p>
-                                                </div>
+                                            {item.cantidad && (
+                                                <p className="text-2xl font-bold">{item.cantidad}</p>
                                             )}
                                         </div>
                                     </div>
                                 ))}
-                                {(datos.historial || []).length === 0 && (
-                                    <div className="text-center py-8 text-gray-400">
-                                        <p className="text-lg">📝 No hay movimientos registrados aún</p>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>
